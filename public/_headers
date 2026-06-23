@@ -1,0 +1,4 @@
+# Required so ffmpeg.wasm (core-mt) can use SharedArrayBuffer.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
