@@ -1,0 +1,92 @@
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { toBlobURL } from "@ffmpeg/util";
+import type { Frame } from "./decode";
+import {
+  buildAnimatedArgs,
+  buildConcatList,
+  buildStaticArgs,
+  computeRepeatCount,
+} from "./encode-args";
+
+export type StaticInput = {
+  kind: "static";
+  image: Uint8Array;
+  imageName: string;
+  audio: Uint8Array;
+  audioName: string;
+};
+
+export type AnimatedInput = {
+  kind: "animated";
+  frames: Frame[];
+  audio: Uint8Array;
+  audioName: string;
+  audioDurationSec: number;
+};
+
+export type EncodeInput = StaticInput | AnimatedInput;
+
+const CORE_BASE =
+  "https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@0.12.10/dist/esm";
+
+let instance: FFmpeg | null = null;
+let stderrTail: string[] = [];
+
+async function getFFmpeg(onProgress: (ratio: number) => void): Promise<FFmpeg> {
+  if (instance) return instance;
+  const ffmpeg = new FFmpeg();
+  ffmpeg.on("log", ({ message }) => {
+    stderrTail.push(message);
+    if (stderrTail.length > 20) stderrTail.shift();
+  });
+  ffmpeg.on("progress", ({ progress }) => {
+    onProgress(Math.min(1, Math.max(0, progress)));
+  });
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
+    workerURL: await toBlobURL(
+      `${CORE_BASE}/ffmpeg-core.worker.js`,
+      "text/javascript",
+    ),
+  });
+  instance = ffmpeg;
+  return ffmpeg;
+}
+
+export async function encode(
+  input: EncodeInput,
+  onProgress: (ratio: number) => void,
+): Promise<Blob> {
+  const ffmpeg = await getFFmpeg(onProgress);
+  stderrTail = [];
+
+  let args: string[];
+  if (input.kind === "static") {
+    await ffmpeg.writeFile(input.imageName, input.image);
+    await ffmpeg.writeFile(input.audioName, input.audio);
+    args = buildStaticArgs(input.imageName, input.audioName, "out.mp4");
+  } else {
+    const names = input.frames.map(
+      (_, i) => `frame_${String(i).padStart(4, "0")}.png`,
+    );
+    for (let i = 0; i < input.frames.length; i++) {
+      await ffmpeg.writeFile(names[i], input.frames[i].png);
+    }
+    await ffmpeg.writeFile(input.audioName, input.audio);
+    const durations = input.frames.map((f) => f.durationMs / 1000);
+    const animDuration = durations.reduce((a, b) => a + b, 0);
+    const repeats = computeRepeatCount(input.audioDurationSec, animDuration);
+    const list = buildConcatList(names, durations, repeats);
+    await ffmpeg.writeFile("list.txt", new TextEncoder().encode(list));
+    args = buildAnimatedArgs(input.audioName, "out.mp4");
+  }
+
+  const code = await ffmpeg.exec(args);
+  if (code !== 0) {
+    throw new Error(`ffmpeg exited ${code}\n${stderrTail.join("\n")}`);
+  }
+  const data = await ffmpeg.readFile("out.mp4");
+  const mp4: BlobPart = typeof data === "string" ? data : new Uint8Array(data);
+  return new Blob([mp4], { type: "video/mp4" });
+}
