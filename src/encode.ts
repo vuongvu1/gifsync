@@ -31,8 +31,9 @@ const CORE_BASE =
 
 let instance: FFmpeg | null = null;
 let stderrTail: string[] = [];
+let activeProgress: (ratio: number) => void = () => {};
 
-async function getFFmpeg(onProgress: (ratio: number) => void): Promise<FFmpeg> {
+async function getFFmpeg(): Promise<FFmpeg> {
   if (instance) return instance;
   const ffmpeg = new FFmpeg();
   ffmpeg.on("log", ({ message }) => {
@@ -40,7 +41,7 @@ async function getFFmpeg(onProgress: (ratio: number) => void): Promise<FFmpeg> {
     if (stderrTail.length > 20) stderrTail.shift();
   });
   ffmpeg.on("progress", ({ progress }) => {
-    onProgress(Math.min(1, Math.max(0, progress)));
+    activeProgress(Math.min(1, Math.max(0, progress)));
   });
   await ffmpeg.load({
     coreURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
@@ -58,7 +59,8 @@ export async function encode(
   input: EncodeInput,
   onProgress: (ratio: number) => void,
 ): Promise<Blob> {
-  const ffmpeg = await getFFmpeg(onProgress);
+  activeProgress = onProgress;
+  const ffmpeg = await getFFmpeg();
   stderrTail = [];
 
   let args: string[];
