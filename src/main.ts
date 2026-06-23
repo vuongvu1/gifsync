@@ -128,6 +128,7 @@ generateBtn.addEventListener("click", async () => {
     link.download = "gifsync.mp4";
     link.textContent = "Download MP4";
     downloadEl.append(link);
+    link.click(); // auto-trigger download when ready; link stays as fallback
     statusEl.textContent = "Done.";
   } catch (err) {
     statusEl.className = "error";
