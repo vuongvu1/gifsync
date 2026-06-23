@@ -21,7 +21,7 @@ app.innerHTML = `
       <input id="audioInput" type="file" accept="audio/*" hidden />
     </label>
   </div>
-  <div id="preview"><audio id="audio" controls></audio></div>
+  <div id="preview"><div id="imageHost"></div><audio id="audio" controls></audio></div>
   <button id="generate" disabled>Generate video</button>
   <progress id="progress" value="0" max="1" hidden></progress>
   <div id="status"></div>
@@ -32,7 +32,7 @@ const imageInput = app.querySelector<HTMLInputElement>("#imageInput")!;
 const audioInput = app.querySelector<HTMLInputElement>("#audioInput")!;
 const imageDrop = app.querySelector<HTMLLabelElement>("#imageDrop")!;
 const audioDrop = app.querySelector<HTMLLabelElement>("#audioDrop")!;
-const previewHost = app.querySelector<HTMLDivElement>("#preview")!;
+const imageHost = app.querySelector<HTMLDivElement>("#imageHost")!;
 const audioEl = app.querySelector<HTMLAudioElement>("#audio")!;
 const generateBtn = app.querySelector<HTMLButtonElement>("#generate")!;
 const progressEl = app.querySelector<HTMLProgressElement>("#progress")!;
@@ -41,22 +41,41 @@ const downloadEl = app.querySelector<HTMLDivElement>("#download")!;
 
 let imageFile: File | null = null;
 let audioFile: File | null = null;
+let lastDownloadUrl: string | null = null;
 
 function refresh(): void {
   imageDrop.classList.toggle("filled", imageFile !== null);
   audioDrop.classList.toggle("filled", audioFile !== null);
   generateBtn.disabled = !(imageFile && audioFile);
   if (imageFile && audioFile) {
-    renderPreview(imageFile, audioFile, previewHost, audioEl);
+    renderPreview(imageFile, audioFile, imageHost, audioEl);
   }
 }
 
 imageInput.addEventListener("change", () => {
-  imageFile = imageInput.files?.[0] ?? null;
+  const f = imageInput.files?.[0] ?? null;
+  if (f && !f.type.startsWith("image/")) {
+    statusEl.textContent = "Please choose an image file (photo, GIF, or WebP).";
+    statusEl.className = "error";
+    imageInput.value = "";
+    return;
+  }
+  imageFile = f;
+  statusEl.textContent = "";
+  statusEl.className = "";
   refresh();
 });
 audioInput.addEventListener("change", () => {
-  audioFile = audioInput.files?.[0] ?? null;
+  const f = audioInput.files?.[0] ?? null;
+  if (f && !f.type.startsWith("audio/")) {
+    statusEl.textContent = "Please choose an audio file.";
+    statusEl.className = "error";
+    audioInput.value = "";
+    return;
+  }
+  audioFile = f;
+  statusEl.textContent = "";
+  statusEl.className = "";
   refresh();
 });
 
@@ -101,7 +120,9 @@ generateBtn.addEventListener("click", async () => {
     const blob = await encode(input, (ratio) => {
       progressEl.value = ratio;
     });
-    const url = URL.createObjectURL(blob);
+    if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl);
+    lastDownloadUrl = URL.createObjectURL(blob);
+    const url = lastDownloadUrl;
     const link = document.createElement("a");
     link.href = url;
     link.download = "gifsync.mp4";

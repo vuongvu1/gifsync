@@ -22,24 +22,26 @@ export async function decodeAnimated(file: Blob): Promise<Frame[]> {
   if (!ctx) throw new Error("Could not get a 2D canvas context.");
 
   const frames: Frame[] = [];
-  for (let i = 0; i < count; i++) {
-    const { image } = await decoder.decode({ frameIndex: i });
-    canvas.width = image.displayWidth;
-    canvas.height = image.displayHeight;
-    ctx.drawImage(image, 0, 0);
-    // VideoFrame.duration is in microseconds; some frames report null.
-    const durationMs = image.duration ? image.duration / 1000 : DEFAULT_FRAME_MS;
-    image.close();
+  try {
+    for (let i = 0; i < count; i++) {
+      const { image } = await decoder.decode({ frameIndex: i });
+      canvas.width = image.displayWidth;
+      canvas.height = image.displayHeight;
+      ctx.drawImage(image, 0, 0);
+      // VideoFrame.duration is in microseconds; some frames report null.
+      const durationMs = image.duration ? image.duration / 1000 : DEFAULT_FRAME_MS;
+      image.close();
 
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error("canvas.toBlob failed"))),
-        "image/png",
-      );
-    });
-    frames.push({ png: new Uint8Array(await blob.arrayBuffer()), durationMs });
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error("canvas.toBlob failed"))),
+          "image/png",
+        );
+      });
+      frames.push({ png: new Uint8Array(await blob.arrayBuffer()), durationMs });
+    }
+  } finally {
+    decoder.close();
   }
-
-  decoder.close();
   return frames;
 }

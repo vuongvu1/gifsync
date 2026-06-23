@@ -64,9 +64,13 @@ export async function encode(
   stderrTail = [];
 
   let args: string[];
+  const fsFiles: string[] = [];
+
   if (input.kind === "static") {
     await ffmpeg.writeFile(input.imageName, input.image);
+    fsFiles.push(input.imageName);
     await ffmpeg.writeFile(input.audioName, input.audio);
+    fsFiles.push(input.audioName);
     args = buildStaticArgs(input.imageName, input.audioName, "out.mp4");
   } else {
     const names = input.frames.map(
@@ -74,21 +78,31 @@ export async function encode(
     );
     for (let i = 0; i < input.frames.length; i++) {
       await ffmpeg.writeFile(names[i], input.frames[i].png);
+      fsFiles.push(names[i]);
     }
     await ffmpeg.writeFile(input.audioName, input.audio);
+    fsFiles.push(input.audioName);
     const durations = input.frames.map((f) => f.durationMs / 1000);
     const animDuration = durations.reduce((a, b) => a + b, 0);
     const repeats = computeRepeatCount(input.audioDurationSec, animDuration);
     const list = buildConcatList(names, durations, repeats);
     await ffmpeg.writeFile("list.txt", new TextEncoder().encode(list));
+    fsFiles.push("list.txt");
     args = buildAnimatedArgs(input.audioName, "out.mp4");
   }
 
-  const code = await ffmpeg.exec(args);
-  if (code !== 0) {
-    throw new Error(`ffmpeg exited ${code}\n${stderrTail.join("\n")}`);
+  try {
+    const code = await ffmpeg.exec(args);
+    if (code !== 0) {
+      throw new Error(`ffmpeg exited ${code}\n${stderrTail.join("\n")}`);
+    }
+    const data = await ffmpeg.readFile("out.mp4");
+    const mp4: BlobPart = typeof data === "string" ? data : new Uint8Array(data);
+    return new Blob([mp4], { type: "video/mp4" });
+  } finally {
+    for (const name of fsFiles) {
+      try { await ffmpeg.deleteFile(name); } catch {}
+    }
+    try { await ffmpeg.deleteFile("out.mp4"); } catch {}
   }
-  const data = await ffmpeg.readFile("out.mp4");
-  const mp4: BlobPart = typeof data === "string" ? data : new Uint8Array(data);
-  return new Blob([mp4], { type: "video/mp4" });
 }
