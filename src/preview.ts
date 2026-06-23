@@ -27,8 +27,15 @@ export function getAudioDuration(audio: Blob): Promise<number> {
   return new Promise((resolve, reject) => {
     const el = new Audio();
     el.preload = "metadata";
-    el.onloadedmetadata = () => resolve(el.duration);
-    el.onerror = () => reject(new Error("Could not read audio metadata."));
-    el.src = URL.createObjectURL(audio);
+    const url = URL.createObjectURL(audio);
+    el.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(el.duration);
+    };
+    el.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read audio metadata."));
+    };
+    el.src = url;
   });
 }
