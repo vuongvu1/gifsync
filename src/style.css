@@ -1,0 +1,62 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: light dark;
+}
+body {
+  margin: 0;
+  padding: 2rem;
+  max-width: 720px;
+  margin-inline: auto;
+}
+h1 {
+  margin-top: 0;
+}
+.note {
+  font-size: 0.85rem;
+  opacity: 0.7;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.drops {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.drop {
+  border: 2px dashed currentColor;
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: center;
+  cursor: pointer;
+}
+.drop.filled {
+  border-style: solid;
+}
+#preview {
+  margin: 1.5rem 0;
+}
+#preview img {
+  border-radius: 8px;
+}
+button {
+  font-size: 1rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+progress {
+  width: 100%;
+  margin-top: 1rem;
+}
+.error {
+  color: #c0392b;
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
