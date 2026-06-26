@@ -2,3 +2,6 @@ node_modules
 dist
 *.log
 .superpowers
+.playwright-mcp
+.wrangler
+gifsync-light.png

@@ -17,8 +17,13 @@ export function renderPreview(
   const img = document.createElement("img");
   img.src = lastImageUrl;
   img.alt = "preview";
-  img.style.maxWidth = "100%";
+  img.style.width = "100%";
+  img.style.display = "block";
   imageHost.append(img);
+
+  const canvas = document.createElement("canvas");
+  canvas.id = "vizCanvas";
+  imageHost.append(canvas);
 
   audioEl.src = lastAudioUrl;
 }
