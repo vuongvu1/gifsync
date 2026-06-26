@@ -107,6 +107,25 @@ async function buildInput(image: File, audio: File): Promise<EncodeInput> {
 
 generateBtn.addEventListener("click", async () => {
   if (!imageFile || !audioFile) return;
+
+  // Reserve the save location NOW, while the click's user-activation is still
+  // live. A programmatic link.click() after the (multi-second) encode is
+  // blocked because transient activation has expired — that's why auto-download
+  // wasn't working. Chromium-only; other browsers fall back to the link below.
+  let fileHandle: FileSystemFileHandle | null = null;
+  const picker = (window as { showSaveFilePicker?: Function }).showSaveFilePicker;
+  if (picker) {
+    try {
+      fileHandle = await picker({
+        suggestedName: "gifsync.mp4",
+        types: [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }],
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return; // user cancelled
+      fileHandle = null; // picker unavailable/failed → fall back to link
+    }
+  }
+
   generateBtn.disabled = true;
   statusEl.textContent = "Decoding…";
   statusEl.className = "";
@@ -128,8 +147,16 @@ generateBtn.addEventListener("click", async () => {
     link.download = "gifsync.mp4";
     link.textContent = "Download MP4";
     downloadEl.append(link);
-    link.click(); // auto-trigger download when ready; link stays as fallback
-    statusEl.textContent = "Done.";
+
+    if (fileHandle) {
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      statusEl.textContent = "Saved.";
+    } else {
+      link.click(); // best-effort auto-download (fast encodes only); link stays as fallback
+      statusEl.textContent = "Done.";
+    }
   } catch (err) {
     statusEl.className = "error";
     statusEl.textContent = err instanceof Error ? err.message : String(err);
