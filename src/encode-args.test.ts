@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_VIZ_LAYOUT,
   buildAnimatedArgs,
   buildConcatList,
   buildStaticArgs,
@@ -41,6 +42,12 @@ describe("buildAnimatedArgs", () => {
   });
 });
 
+describe("DEFAULT_VIZ_LAYOUT", () => {
+  it("is the bottom full-width quarter strip", () => {
+    expect(DEFAULT_VIZ_LAYOUT).toEqual({ x: 0, y: 0.75, w: 1, h: 0.25 });
+  });
+});
+
 describe("computeRepeatCount", () => {
   it("rounds up so the loop fills the audio", () => {
     expect(computeRepeatCount(10, 3)).toBe(4);
@@ -71,15 +78,18 @@ describe("buildConcatList", () => {
 });
 
 describe("buildVizComplex", () => {
-  it("splits audio, runs the gray bars filter, and overlays at the bottom", () => {
+  it("uses the default layout (bottom, full width, quarter height)", () => {
     const c = buildVizComplex("bars");
     expect(c).toContain("[1:a]asplit=2[aud][avis]");
     expect(c).toContain("showfreqs=mode=bar:ascale=log:colors=gray");
-    expect(c).toContain("scale2ref=w=main_w:h=main_h/4[viz][bg2]");
-    expect(c).toContain("overlay=x=(W-w)/2:y=H-h[vout]");
+    expect(c).toContain("scale2ref=w=main_w*1:h=main_h*0.25[viz][bg2]");
+    expect(c).toContain("overlay=x=W*0:y=H*0.75[vout]");
   });
-  it("uses the gray showwaves filter for the waveform style", () => {
-    expect(buildVizComplex("waveform")).toContain("showwaves=mode=line:colors=gray");
+  it("maps a custom layout into scale2ref size and overlay position", () => {
+    const c = buildVizComplex("waveform", { x: 0.1, y: 0.2, w: 0.5, h: 0.25 });
+    expect(c).toContain("showwaves=mode=line:colors=gray");
+    expect(c).toContain("scale2ref=w=main_w*0.5:h=main_h*0.25[viz][bg2]");
+    expect(c).toContain("overlay=x=W*0.1:y=H*0.2[vout]");
   });
 });
 

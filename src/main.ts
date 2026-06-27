@@ -9,8 +9,8 @@ import { decodeAnimated } from "./decode";
 import type { EncodeInput } from "./encode";
 import { encode } from "./encode";
 import { getAudioDuration, renderPreview } from "./preview";
-import type { VizStyle } from "./encode-args";
 import { createPreviewViz } from "./preview-viz";
+import { type VizStyle, type VizLayout, DEFAULT_VIZ_LAYOUT } from "./encode-args";
 
 // Radix dark color scales live under `.dark`; mirror the OS preference onto <html>.
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
@@ -46,7 +46,13 @@ app.innerHTML = `
         <option value="waveform">Waveform</option>
       </select>
     </label>
-    <p class="hint">The visualizer is rendered into the exported video.</p>
+    <div class="sliders">
+      <label class="slider">X <input id="vizX" type="range" min="0" max="100" value="0" /><span id="vizXval">0%</span></label>
+      <label class="slider">Y <input id="vizY" type="range" min="0" max="100" value="75" /><span id="vizYval">75%</span></label>
+      <label class="slider">W <input id="vizW" type="range" min="1" max="100" value="100" /><span id="vizWval">100%</span></label>
+      <label class="slider">H <input id="vizH" type="range" min="1" max="100" value="25" /><span id="vizHval">25%</span></label>
+    </div>
+    <p class="hint">Position &amp; size the visualizer. It's rendered into the exported video.</p>
   </div>
   <button id="generate" disabled>Generate video</button>
   <progress id="progress" value="0" max="1" hidden></progress>
@@ -65,12 +71,38 @@ const generateBtn = app.querySelector<HTMLButtonElement>("#generate")!;
 const progressEl = app.querySelector<HTMLProgressElement>("#progress")!;
 const statusEl = app.querySelector<HTMLDivElement>("#status")!;
 const downloadEl = app.querySelector<HTMLDivElement>("#download")!;
+const vizX = app.querySelector<HTMLInputElement>("#vizX")!;
+const vizY = app.querySelector<HTMLInputElement>("#vizY")!;
+const vizW = app.querySelector<HTMLInputElement>("#vizW")!;
+const vizH = app.querySelector<HTMLInputElement>("#vizH")!;
+const vizXval = app.querySelector<HTMLSpanElement>("#vizXval")!;
+const vizYval = app.querySelector<HTMLSpanElement>("#vizYval")!;
+const vizWval = app.querySelector<HTMLSpanElement>("#vizWval")!;
+const vizHval = app.querySelector<HTMLSpanElement>("#vizHval")!;
 
 const previewViz = createPreviewViz(audioEl);
 
 let imageFile: File | null = null;
 let audioFile: File | null = null;
 let lastDownloadUrl: string | null = null;
+let vizLayout: VizLayout = { ...DEFAULT_VIZ_LAYOUT };
+
+function updateVizLayout(): void {
+  vizLayout = {
+    x: Number(vizX.value) / 100,
+    y: Number(vizY.value) / 100,
+    w: Math.max(0.01, Number(vizW.value) / 100),
+    h: Math.max(0.01, Number(vizH.value) / 100),
+  };
+  vizXval.textContent = `${vizX.value}%`;
+  vizYval.textContent = `${vizY.value}%`;
+  vizWval.textContent = `${vizW.value}%`;
+  vizHval.textContent = `${vizH.value}%`;
+  previewViz.setLayout(vizLayout);
+}
+for (const el of [vizX, vizY, vizW, vizH]) {
+  el.addEventListener("input", updateVizLayout);
+}
 
 function refresh(): void {
   imageDrop.classList.toggle("filled", imageFile !== null);
@@ -81,6 +113,7 @@ function refresh(): void {
     const canvas = imageHost.querySelector<HTMLCanvasElement>("#vizCanvas");
     if (canvas) previewViz.attach(canvas);
     previewViz.setStyle(readVizStyle(vizSelect.value));
+    previewViz.setLayout(vizLayout);
   }
 }
 
@@ -127,7 +160,12 @@ function readVizStyle(value: string): VizStyle {
   return (VIZ_STYLES as readonly string[]).includes(value) ? (value as VizStyle) : "none";
 }
 
-async function buildInput(image: File, audio: File, visualizer: VizStyle): Promise<EncodeInput> {
+async function buildInput(
+  image: File,
+  audio: File,
+  visualizer: VizStyle,
+  vizLayout: VizLayout,
+): Promise<EncodeInput> {
   const audioBytes = new Uint8Array(await audio.arrayBuffer());
   const audioName = `audio${ext(audio)}`;
   const animatedType = image.type === "image/gif" || image.type === "image/webp";
@@ -135,7 +173,7 @@ async function buildInput(image: File, audio: File, visualizer: VizStyle): Promi
     const frames = await decodeAnimated(image);
     if (frames.length > 1) {
       const audioDurationSec = await getAudioDuration(audio);
-      return { kind: "animated", frames, audio: audioBytes, audioName, audioDurationSec, visualizer };
+      return { kind: "animated", frames, audio: audioBytes, audioName, audioDurationSec, visualizer, vizLayout };
     }
   }
   const imageBytes = new Uint8Array(await image.arrayBuffer());
@@ -146,6 +184,7 @@ async function buildInput(image: File, audio: File, visualizer: VizStyle): Promi
     audio: audioBytes,
     audioName,
     visualizer,
+    vizLayout,
   };
 }
 
@@ -178,7 +217,7 @@ generateBtn.addEventListener("click", async () => {
   progressEl.value = 0;
 
   try {
-    const input = await buildInput(imageFile, audioFile, readVizStyle(vizSelect.value));
+    const input = await buildInput(imageFile, audioFile, readVizStyle(vizSelect.value), vizLayout);
     statusEl.textContent = "Encoding…";
     const blob = await encode(input, (ratio) => {
       progressEl.value = ratio;

@@ -1,14 +1,16 @@
-import type { VizStyle } from "./encode-args";
+import { type VizStyle, type VizLayout, DEFAULT_VIZ_LAYOUT } from "./encode-args";
 
 // Live, audio-synced approximation of the exported visualizer. Web Audio's
 // AnalyserNode feeds a canvas overlaid on the preview image. This is a preview,
 // not a byte-match of ffmpeg's output — FFT params differ.
 export function createPreviewViz(audioEl: HTMLAudioElement): {
   attach(canvas: HTMLCanvasElement): void;
+  setLayout(layout: VizLayout): void;
   setStyle(style: VizStyle): void;
 } {
   let canvas: HTMLCanvasElement | null = null;
   let style: VizStyle = "none";
+  let layout: VizLayout = DEFAULT_VIZ_LAYOUT;
   let rafId = 0;
 
   // Audio graph is created lazily on first play (AudioContext needs a gesture).
@@ -32,6 +34,14 @@ export function createPreviewViz(audioEl: HTMLAudioElement): {
     if (!canvas) return;
     const c = canvas.getContext("2d");
     if (c) c.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function applyLayout(): void {
+    if (!canvas) return;
+    canvas.style.left = `${layout.x * 100}%`;
+    canvas.style.top = `${layout.y * 100}%`;
+    canvas.style.width = `${layout.w * 100}%`;
+    canvas.style.height = `${layout.h * 100}%`;
   }
 
   function draw(): void {
@@ -96,7 +106,12 @@ export function createPreviewViz(audioEl: HTMLAudioElement): {
   return {
     attach(c: HTMLCanvasElement): void {
       canvas = c;
+      applyLayout();
       if (audioEl.paused) clear();
+    },
+    setLayout(l: VizLayout): void {
+      layout = l;
+      applyLayout();
     },
     setStyle(s: VizStyle): void {
       style = s;
