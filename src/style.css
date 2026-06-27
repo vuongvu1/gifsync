@@ -106,7 +106,7 @@ h1 {
 
 #vizCanvas {
   position: absolute;
-  pointer-events: none;
+  touch-action: none;
 }
 
 #preview audio {
@@ -115,31 +115,6 @@ h1 {
 
 .controls {
   margin: 1.5rem 0;
-}
-
-.sliders {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4rem 1rem;
-  margin-top: 0.75rem;
-}
-
-.slider {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.slider input[type="range"] {
-  flex: 1;
-}
-
-.slider span {
-  width: 3ch;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 .field {

@@ -82,12 +82,14 @@ describe("buildVizComplex", () => {
     const c = buildVizComplex("bars");
     expect(c).toContain("[1:a]asplit=2[aud][avis]");
     expect(c).toContain("showfreqs=mode=bar:ascale=log:colors=gray");
+    expect(c).toContain("format=rgba,colorkey=0x000000:0.30:0.10");
     expect(c).toContain("scale2ref=w=main_w*1:h=main_h*0.25[viz][bg2]");
     expect(c).toContain("overlay=x=W*0:y=H*0.75[vout]");
   });
   it("maps a custom layout into scale2ref size and overlay position", () => {
     const c = buildVizComplex("waveform", { x: 0.1, y: 0.2, w: 0.5, h: 0.25 });
     expect(c).toContain("showwaves=mode=line:colors=gray");
+    expect(c).toContain("format=rgba,colorkey=0x000000:0.30:0.10");
     expect(c).toContain("scale2ref=w=main_w*0.5:h=main_h*0.25[viz][bg2]");
     expect(c).toContain("overlay=x=W*0.1:y=H*0.2[vout]");
   });

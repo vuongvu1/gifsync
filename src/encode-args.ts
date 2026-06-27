@@ -32,7 +32,7 @@ export function buildVizComplex(
   // The default {x:0,w:1} happens to equal the old centered formula since w=full width.
   return [
     "[1:a]asplit=2[aud][avis]",
-    `[avis]${VIZ_FILTERS[style]}[viz0]`,
+    `[avis]${VIZ_FILTERS[style]},format=rgba,colorkey=0x000000:0.30:0.10[viz0]`,
     `[0:v]${EVEN_SCALE}[bg]`,
     `[viz0][bg]scale2ref=w=main_w*${w}:h=main_h*${h}[viz][bg2]`,
     `[bg2][viz]overlay=x=W*${x}:y=H*${y}[vout]`,

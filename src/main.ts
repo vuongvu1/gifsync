@@ -46,13 +46,7 @@ app.innerHTML = `
         <option value="waveform">Waveform</option>
       </select>
     </label>
-    <div class="sliders">
-      <label class="slider">X <input id="vizX" type="range" min="0" max="100" value="0" /><span id="vizXval">0%</span></label>
-      <label class="slider">Y <input id="vizY" type="range" min="0" max="100" value="75" /><span id="vizYval">75%</span></label>
-      <label class="slider">W <input id="vizW" type="range" min="1" max="100" value="100" /><span id="vizWval">100%</span></label>
-      <label class="slider">H <input id="vizH" type="range" min="1" max="100" value="25" /><span id="vizHval">25%</span></label>
-    </div>
-    <p class="hint">Position &amp; size the visualizer. It's rendered into the exported video.</p>
+    <p class="hint">Drag the visualizer to move it · drag the corner to resize. It's rendered into the exported video.</p>
   </div>
   <button id="generate" disabled>Generate video</button>
   <progress id="progress" value="0" max="1" hidden></progress>
@@ -71,38 +65,15 @@ const generateBtn = app.querySelector<HTMLButtonElement>("#generate")!;
 const progressEl = app.querySelector<HTMLProgressElement>("#progress")!;
 const statusEl = app.querySelector<HTMLDivElement>("#status")!;
 const downloadEl = app.querySelector<HTMLDivElement>("#download")!;
-const vizX = app.querySelector<HTMLInputElement>("#vizX")!;
-const vizY = app.querySelector<HTMLInputElement>("#vizY")!;
-const vizW = app.querySelector<HTMLInputElement>("#vizW")!;
-const vizH = app.querySelector<HTMLInputElement>("#vizH")!;
-const vizXval = app.querySelector<HTMLSpanElement>("#vizXval")!;
-const vizYval = app.querySelector<HTMLSpanElement>("#vizYval")!;
-const vizWval = app.querySelector<HTMLSpanElement>("#vizWval")!;
-const vizHval = app.querySelector<HTMLSpanElement>("#vizHval")!;
 
-const previewViz = createPreviewViz(audioEl);
+const previewViz = createPreviewViz(audioEl, (l) => {
+  vizLayout = l;
+});
 
 let imageFile: File | null = null;
 let audioFile: File | null = null;
 let lastDownloadUrl: string | null = null;
 let vizLayout: VizLayout = { ...DEFAULT_VIZ_LAYOUT };
-
-function updateVizLayout(): void {
-  vizLayout = {
-    x: Number(vizX.value) / 100,
-    y: Number(vizY.value) / 100,
-    w: Math.max(0.01, Number(vizW.value) / 100),
-    h: Math.max(0.01, Number(vizH.value) / 100),
-  };
-  vizXval.textContent = `${vizX.value}%`;
-  vizYval.textContent = `${vizY.value}%`;
-  vizWval.textContent = `${vizW.value}%`;
-  vizHval.textContent = `${vizH.value}%`;
-  previewViz.setLayout(vizLayout);
-}
-for (const el of [vizX, vizY, vizW, vizH]) {
-  el.addEventListener("input", updateVizLayout);
-}
 
 function refresh(): void {
   imageDrop.classList.toggle("filled", imageFile !== null);
