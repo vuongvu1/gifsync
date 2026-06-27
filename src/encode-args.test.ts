@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_VIZ_LAYOUT,
   buildAnimatedArgs,
   buildConcatList,
   buildStaticArgs,
+  buildVizComplex,
   computeRepeatCount,
 } from "./encode-args";
 
@@ -40,6 +42,12 @@ describe("buildAnimatedArgs", () => {
   });
 });
 
+describe("DEFAULT_VIZ_LAYOUT", () => {
+  it("is the bottom full-width quarter strip", () => {
+    expect(DEFAULT_VIZ_LAYOUT).toEqual({ x: 0, y: 0.75, w: 1, h: 0.25 });
+  });
+});
+
 describe("computeRepeatCount", () => {
   it("rounds up so the loop fills the audio", () => {
     expect(computeRepeatCount(10, 3)).toBe(4);
@@ -66,5 +74,53 @@ describe("buildConcatList", () => {
         "duration 0.060000\n" +
         "file 'b.png'\n",
     );
+  });
+});
+
+describe("buildVizComplex", () => {
+  it("uses the default layout (bottom, full width, quarter height)", () => {
+    const c = buildVizComplex("bars");
+    expect(c).toContain("[1:a]asplit=2[aud][avis]");
+    expect(c).toContain("showfreqs=mode=bar:ascale=log:colors=gray");
+    expect(c).toContain("format=rgba,colorkey=0x000000:0.30:0.10");
+    expect(c).toContain("scale2ref=w=main_w*1:h=main_h*0.25[viz][bg2]");
+    expect(c).toContain("overlay=x=W*0:y=H*0.75[vout]");
+  });
+  it("maps a custom layout into scale2ref size and overlay position", () => {
+    const c = buildVizComplex("waveform", { x: 0.1, y: 0.2, w: 0.5, h: 0.25 });
+    expect(c).toContain("showwaves=mode=line:colors=gray");
+    expect(c).toContain("format=rgba,colorkey=0x000000:0.30:0.10");
+    expect(c).toContain("scale2ref=w=main_w*0.5:h=main_h*0.25[viz][bg2]");
+    expect(c).toContain("overlay=x=W*0.1:y=H*0.2[vout]");
+  });
+});
+
+describe("buildStaticArgs with a visualizer", () => {
+  it("emits filter_complex and maps the composited streams", () => {
+    const args = buildStaticArgs("image.png", "audio.mp3", "out.mp4", "bars");
+    expect(args).toContain("-filter_complex");
+    expect(args).toContain(buildVizComplex("bars"));
+    expect(args).toEqual(expect.arrayContaining(["-map", "[vout]"]));
+    expect(args).toEqual(expect.arrayContaining(["-map", "[aud]"]));
+    expect(args).not.toContain("-vf"); // filter_complex replaces -vf
+  });
+  it("is unchanged when style is none (default)", () => {
+    expect(buildStaticArgs("image.png", "audio.mp3", "out.mp4")).toEqual(
+      buildStaticArgs("image.png", "audio.mp3", "out.mp4", "none"),
+    );
+    expect(buildStaticArgs("image.png", "audio.mp3", "out.mp4")).toContain("-vf");
+  });
+});
+
+describe("buildAnimatedArgs with a visualizer", () => {
+  it("emits filter_complex and maps the composited streams", () => {
+    const args = buildAnimatedArgs("audio.mp3", "out.mp4", "waveform");
+    expect(args).toContain("-filter_complex");
+    expect(args).toContain(buildVizComplex("waveform"));
+    expect(args).toEqual(expect.arrayContaining(["-map", "[vout]"]));
+    expect(args).not.toContain("-vf");
+  });
+  it("is unchanged when style is none (default)", () => {
+    expect(buildAnimatedArgs("audio.mp3", "out.mp4")).toContain("-vf");
   });
 });

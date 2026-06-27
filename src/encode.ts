@@ -1,6 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import type { Frame } from "./decode";
+import type { VizStyle, VizLayout } from "./encode-args";
 import {
   buildAnimatedArgs,
   buildConcatList,
@@ -14,6 +15,8 @@ export type StaticInput = {
   imageName: string;
   audio: Uint8Array;
   audioName: string;
+  visualizer: VizStyle;
+  vizLayout: VizLayout;
 };
 
 export type AnimatedInput = {
@@ -22,6 +25,8 @@ export type AnimatedInput = {
   audio: Uint8Array;
   audioName: string;
   audioDurationSec: number;
+  visualizer: VizStyle;
+  vizLayout: VizLayout;
 };
 
 export type EncodeInput = StaticInput | AnimatedInput;
@@ -71,7 +76,7 @@ export async function encode(
     fsFiles.push(input.imageName);
     await ffmpeg.writeFile(input.audioName, input.audio);
     fsFiles.push(input.audioName);
-    args = buildStaticArgs(input.imageName, input.audioName, "out.mp4");
+    args = buildStaticArgs(input.imageName, input.audioName, "out.mp4", input.visualizer, input.vizLayout);
   } else {
     const names = input.frames.map(
       (_, i) => `frame_${String(i).padStart(4, "0")}.png`,
@@ -88,7 +93,7 @@ export async function encode(
     const list = buildConcatList(names, durations, repeats);
     await ffmpeg.writeFile("list.txt", new TextEncoder().encode(list));
     fsFiles.push("list.txt");
-    args = buildAnimatedArgs(input.audioName, "out.mp4");
+    args = buildAnimatedArgs(input.audioName, "out.mp4", input.visualizer, input.vizLayout);
   }
 
   try {
