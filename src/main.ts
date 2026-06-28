@@ -11,6 +11,7 @@ import { encode } from "./encode";
 import { getAudioDuration, renderPreview } from "./preview";
 import { createPreviewViz } from "./preview-viz";
 import { type VizStyle, type VizLayout, DEFAULT_VIZ_LAYOUT } from "./encode-args";
+import { renderVizFrames } from "./viz-frames";
 
 // Radix dark color scales live under `.dark`; mirror the OS preference onto <html>.
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
@@ -42,7 +43,7 @@ app.innerHTML = `
       Visualizer
       <select id="vizStyle">
         <option value="none">None</option>
-        <option value="bars">Frequency bars</option>
+        <option value="bars" selected>Frequency bars</option>
         <option value="waveform">Waveform</option>
       </select>
     </label>
@@ -131,12 +132,28 @@ function readVizStyle(value: string): VizStyle {
   return (VIZ_STYLES as readonly string[]).includes(value) ? (value as VizStyle) : "none";
 }
 
-async function buildInput(
-  image: File,
-  audio: File,
-  visualizer: VizStyle,
-  vizLayout: VizLayout,
-): Promise<EncodeInput> {
+type VizData = { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
+
+const VIZ_FPS = 15;
+
+async function prepareViz(image: File, audio: File): Promise<VizData> {
+  const style = readVizStyle(vizSelect.value);
+  if (style === "none") return null;
+  const bmp = await createImageBitmap(image);
+  const evenW = bmp.width - (bmp.width % 2);
+  const evenH = bmp.height - (bmp.height % 2);
+  bmp.close();
+  const boxW = Math.max(1, Math.round(vizLayout.w * evenW));
+  const boxH = Math.max(1, Math.round(vizLayout.h * evenH));
+  const x = Math.round(vizLayout.x * evenW);
+  const y = Math.round(vizLayout.y * evenH);
+  const frames = await renderVizFrames(audio, style, boxW, boxH, VIZ_FPS, (done, total) => {
+    statusEl.textContent = `Rendering visualizer… ${done}/${total}`;
+  });
+  return { frames, x, y, fps: VIZ_FPS };
+}
+
+async function buildInput(image: File, audio: File, viz: VizData): Promise<EncodeInput> {
   const audioBytes = new Uint8Array(await audio.arrayBuffer());
   const audioName = `audio${ext(audio)}`;
   const animatedType = image.type === "image/gif" || image.type === "image/webp";
@@ -144,7 +161,7 @@ async function buildInput(
     const frames = await decodeAnimated(image);
     if (frames.length > 1) {
       const audioDurationSec = await getAudioDuration(audio);
-      return { kind: "animated", frames, audio: audioBytes, audioName, audioDurationSec, visualizer, vizLayout };
+      return { kind: "animated", frames, audio: audioBytes, audioName, audioDurationSec, viz };
     }
   }
   const imageBytes = new Uint8Array(await image.arrayBuffer());
@@ -154,8 +171,7 @@ async function buildInput(
     imageName: `image${ext(image)}`,
     audio: audioBytes,
     audioName,
-    visualizer,
-    vizLayout,
+    viz,
   };
 }
 
@@ -188,7 +204,9 @@ generateBtn.addEventListener("click", async () => {
   progressEl.value = 0;
 
   try {
-    const input = await buildInput(imageFile, audioFile, readVizStyle(vizSelect.value), vizLayout);
+    const viz = await prepareViz(imageFile, audioFile);
+    statusEl.textContent = "Decoding…";
+    const input = await buildInput(imageFile, audioFile, viz);
     statusEl.textContent = "Encoding…";
     const blob = await encode(input, (ratio) => {
       progressEl.value = ratio;

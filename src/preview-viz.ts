@@ -1,4 +1,5 @@
 import { type VizStyle, type VizLayout, DEFAULT_VIZ_LAYOUT } from "./encode-args";
+import { drawBars, drawWave } from "./viz-draw";
 
 const HANDLE = 16; // bottom-right resize hit zone (px)
 
@@ -87,30 +88,13 @@ export function createPreviewViz(
     c.fillRect(w - 12, h - 12, 12, 12);
 
     if (!live || !analyser || !data) return; // paused: outline + handle only
-    c.fillStyle = "rgba(255,255,255,0.85)";
-    c.strokeStyle = "rgba(255,255,255,0.85)";
 
     if (style === "bars") {
       analyser.getByteFrequencyData(data);
-      const bars = 48;
-      const step = Math.floor(data.length / bars) || 1;
-      const bw = w / bars;
-      for (let i = 0; i < bars; i++) {
-        const v = data[i * step] / 255;
-        const bh = v * h;
-        c.fillRect(i * bw, h - bh, bw * 0.7, bh);
-      }
+      drawBars(c, w, h, data);
     } else {
       analyser.getByteTimeDomainData(data);
-      c.lineWidth = 2;
-      c.beginPath();
-      for (let i = 0; i < data.length; i++) {
-        const x = (i / (data.length - 1)) * w;
-        const y = (data[i] / 255) * h;
-        if (i === 0) c.moveTo(x, y);
-        else c.lineTo(x, y);
-      }
-      c.stroke();
+      drawWave(c, w, h, data);
     }
   }
 

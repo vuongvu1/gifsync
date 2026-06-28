@@ -1,7 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import type { Frame } from "./decode";
-import type { VizStyle, VizLayout } from "./encode-args";
+import type { VizArgs } from "./encode-args";
 import {
   buildAnimatedArgs,
   buildConcatList,
@@ -15,8 +15,7 @@ export type StaticInput = {
   imageName: string;
   audio: Uint8Array;
   audioName: string;
-  visualizer: VizStyle;
-  vizLayout: VizLayout;
+  viz: { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
 };
 
 export type AnimatedInput = {
@@ -25,8 +24,7 @@ export type AnimatedInput = {
   audio: Uint8Array;
   audioName: string;
   audioDurationSec: number;
-  visualizer: VizStyle;
-  vizLayout: VizLayout;
+  viz: { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
 };
 
 export type EncodeInput = StaticInput | AnimatedInput;
@@ -60,6 +58,10 @@ async function getFFmpeg(): Promise<FFmpeg> {
   return ffmpeg;
 }
 
+function vizName(i: number): string {
+  return `viz_${String(i).padStart(5, "0")}.png`;
+}
+
 export async function encode(
   input: EncodeInput,
   onProgress: (ratio: number) => void,
@@ -76,7 +78,21 @@ export async function encode(
     fsFiles.push(input.imageName);
     await ffmpeg.writeFile(input.audioName, input.audio);
     fsFiles.push(input.audioName);
-    args = buildStaticArgs(input.imageName, input.audioName, "out.mp4", input.visualizer, input.vizLayout);
+    if (input.viz) {
+      for (let i = 0; i < input.viz.frames.length; i++) {
+        const name = vizName(i);
+        await ffmpeg.writeFile(name, input.viz.frames[i]);
+        fsFiles.push(name);
+      }
+    }
+    args = buildStaticArgs(
+      input.imageName,
+      input.audioName,
+      "out.mp4",
+      input.viz
+        ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps }
+        : undefined,
+    );
   } else {
     const names = input.frames.map(
       (_, i) => `frame_${String(i).padStart(4, "0")}.png`,
@@ -93,7 +109,20 @@ export async function encode(
     const list = buildConcatList(names, durations, repeats);
     await ffmpeg.writeFile("list.txt", new TextEncoder().encode(list));
     fsFiles.push("list.txt");
-    args = buildAnimatedArgs(input.audioName, "out.mp4", input.visualizer, input.vizLayout);
+    if (input.viz) {
+      for (let i = 0; i < input.viz.frames.length; i++) {
+        const name = vizName(i);
+        await ffmpeg.writeFile(name, input.viz.frames[i]);
+        fsFiles.push(name);
+      }
+    }
+    args = buildAnimatedArgs(
+      input.audioName,
+      "out.mp4",
+      input.viz
+        ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps }
+        : undefined,
+    );
   }
 
   try {

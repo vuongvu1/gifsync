@@ -4,49 +4,26 @@ export type VizStyle = "none" | "bars" | "waveform";
 
 export type VizLayout = { x: number; y: number; w: number; h: number };
 
-// Bottom strip, full width, quarter height — reproduces the original fixed overlay.
+// Bottom strip, full width, quarter height — the default box.
 export const DEFAULT_VIZ_LAYOUT: VizLayout = { x: 0, y: 0.75, w: 1, h: 0.25 };
 
-// Deterministic short decimal for ffmpeg expressions (avoids float noise like 0.30000000004).
-function fmt(n: number): string {
-  return String(Math.round(n * 1e6) / 1e6);
-}
+// Integer overlay coords (px), frame rate, and a duration cap (s) for the
+// pre-rendered viz PNG sequence. The `-t` cap guarantees the encode terminates
+// even though the base image uses an infinite `-loop 1` (older ffmpeg cores
+// don't always stop an infinite input on `-shortest` alone). durationSec is the
+// viz length (frames/fps ≥ audio), so `-shortest` still ends output at the audio.
+export type VizArgs = { x: number; y: number; fps: number; durationSec: number };
 
-// Audio→video filter per style. Sizes don't matter here: scale2ref resizes
-// the result to the image's width and a quarter of its height before overlay.
-// Neutral gray, no color map.
-const VIZ_FILTERS: Record<Exclude<VizStyle, "none">, string> = {
-  bars: "showfreqs=mode=bar:ascale=log:colors=gray",
-  waveform: "showwaves=mode=line:colors=gray",
-};
-
-// asplit keeps one audio copy for the output mux ([aud]) and feeds the other
-// ([avis]) to the visualizer; the viz video is scaled to the image (main_w/
-// main_h via scale2ref) and overlaid as a bottom strip.
-export function buildVizComplex(
-  style: Exclude<VizStyle, "none">,
-  layout: VizLayout = DEFAULT_VIZ_LAYOUT,
-): string {
-  const x = fmt(layout.x), y = fmt(layout.y), w = fmt(layout.w), h = fmt(layout.h);
-  // x/y are the box's TOP-LEFT corner (not centered): overlay places at W*x, H*y.
-  // The default {x:0,w:1} happens to equal the old centered formula since w=full width.
-  return [
-    "[1:a]asplit=2[aud][avis]",
-    `[avis]${VIZ_FILTERS[style]},format=rgba,colorkey=0x000000:0.30:0.10[viz0]`,
-    `[0:v]${EVEN_SCALE}[bg]`,
-    `[viz0][bg]scale2ref=w=main_w*${w}:h=main_h*${h}[viz][bg2]`,
-    `[bg2][viz]overlay=x=W*${x}:y=H*${y}[vout]`,
-  ].join(";");
-}
+const VIZ_OVERLAY = (x: number, y: number) =>
+  `[0:v]${EVEN_SCALE}[bg];[bg][1:v]overlay=x=${x}:y=${y}:shortest=1[vout]`;
 
 export function buildStaticArgs(
   imageName: string,
   audioName: string,
   out: string,
-  style: VizStyle = "none",
-  layout: VizLayout = DEFAULT_VIZ_LAYOUT,
+  viz?: VizArgs,
 ): string[] {
-  if (style === "none") {
+  if (!viz) {
     return [
       "-loop", "1",
       "-i", imageName,
@@ -63,10 +40,13 @@ export function buildStaticArgs(
   return [
     "-loop", "1",
     "-i", imageName,
+    "-framerate", String(viz.fps),
+    "-i", "viz_%05d.png",
     "-i", audioName,
-    "-filter_complex", buildVizComplex(style, layout),
+    "-filter_complex", VIZ_OVERLAY(viz.x, viz.y),
     "-map", "[vout]",
-    "-map", "[aud]",
+    "-map", "2:a",
+    "-t", String(viz.durationSec),
     "-tune", "stillimage",
     "-pix_fmt", "yuv420p",
     "-c:v", "libx264",
@@ -79,10 +59,9 @@ export function buildStaticArgs(
 export function buildAnimatedArgs(
   audioName: string,
   out: string,
-  style: VizStyle = "none",
-  layout: VizLayout = DEFAULT_VIZ_LAYOUT,
+  viz?: VizArgs,
 ): string[] {
-  if (style === "none") {
+  if (!viz) {
     return [
       "-f", "concat",
       "-safe", "0",
@@ -100,10 +79,13 @@ export function buildAnimatedArgs(
     "-f", "concat",
     "-safe", "0",
     "-i", "list.txt",
+    "-framerate", String(viz.fps),
+    "-i", "viz_%05d.png",
     "-i", audioName,
-    "-filter_complex", buildVizComplex(style, layout),
+    "-filter_complex", VIZ_OVERLAY(viz.x, viz.y),
     "-map", "[vout]",
-    "-map", "[aud]",
+    "-map", "2:a",
+    "-t", String(viz.durationSec),
     "-pix_fmt", "yuv420p",
     "-c:v", "libx264",
     "-c:a", "aac",
