@@ -134,7 +134,7 @@ function readVizStyle(value: string): VizStyle {
 
 type VizData = { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
 
-const VIZ_FPS = 15;
+const VIZ_FPS = 30;
 
 async function prepareViz(image: File, audio: File): Promise<VizData> {
   const style = readVizStyle(vizSelect.value);
