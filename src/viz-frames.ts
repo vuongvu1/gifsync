@@ -30,7 +30,7 @@ async function decodeMono(audio: Blob): Promise<{ pcm: Float32Array; sampleRate:
   }
 }
 
-function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+export function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => {
       if (!b) return reject(new Error("canvas.toBlob failed"));

@@ -104,9 +104,29 @@ h1 {
   max-width: 100%;
 }
 
-#vizCanvas {
+#vizCanvas,
+#wmCanvas {
   position: absolute;
   touch-action: none;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.controls .hint {
+  flex-basis: 100%;
+}
+
+input[type="text"] {
+  font-size: 0.95rem;
+  color: var(--text);
+  background-color: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
 }
 
 #preview audio {

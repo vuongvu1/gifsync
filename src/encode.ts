@@ -1,13 +1,16 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import type { Frame } from "./decode";
-import type { VizArgs } from "./encode-args";
+import type { VizArgs, WmArgs } from "./encode-args";
 import {
+  WM_FILE,
   buildAnimatedArgs,
   buildConcatList,
   buildStaticArgs,
   computeRepeatCount,
 } from "./encode-args";
+
+export type WmInput = { png: Uint8Array; x: number; y: number; durationSec: number };
 
 export type StaticInput = {
   kind: "static";
@@ -16,6 +19,7 @@ export type StaticInput = {
   audio: Uint8Array;
   audioName: string;
   viz: { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
+  wm: WmInput | null;
 };
 
 export type AnimatedInput = {
@@ -25,6 +29,7 @@ export type AnimatedInput = {
   audioName: string;
   audioDurationSec: number;
   viz: { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
+  wm: WmInput | null;
 };
 
 export type EncodeInput = StaticInput | AnimatedInput;
@@ -73,6 +78,13 @@ export async function encode(
   let args: string[];
   const fsFiles: string[] = [];
 
+  let wmArgs: WmArgs | undefined;
+  if (input.wm) {
+    await ffmpeg.writeFile(WM_FILE, input.wm.png);
+    fsFiles.push(WM_FILE);
+    wmArgs = { x: input.wm.x, y: input.wm.y, durationSec: input.wm.durationSec };
+  }
+
   if (input.kind === "static") {
     await ffmpeg.writeFile(input.imageName, input.image);
     fsFiles.push(input.imageName);
@@ -92,6 +104,7 @@ export async function encode(
       input.viz
         ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps }
         : undefined,
+      wmArgs,
     );
   } else {
     const names = input.frames.map(
@@ -122,6 +135,7 @@ export async function encode(
       input.viz
         ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps }
         : undefined,
+      wmArgs,
     );
   }
 

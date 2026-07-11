@@ -25,6 +25,12 @@ export function renderPreview(
   canvas.id = "vizCanvas";
   imageHost.append(canvas);
 
+  // appended after the viz canvas so the watermark stacks on top, matching the
+  // export's overlay order (base → viz → watermark)
+  const wmCanvas = document.createElement("canvas");
+  wmCanvas.id = "wmCanvas";
+  imageHost.append(wmCanvas);
+
   audioEl.src = lastAudioUrl;
 }
 

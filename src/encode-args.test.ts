@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_VIZ_LAYOUT,
+  DEFAULT_WM_LAYOUT,
   buildAnimatedArgs,
   buildConcatList,
   buildStaticArgs,
@@ -109,5 +110,70 @@ describe("buildAnimatedArgs with a visualizer", () => {
   });
   it("is unchanged when no visualizer (default)", () => {
     expect(buildAnimatedArgs("audio.mp3", "out.mp4")).toContain("-vf");
+  });
+});
+
+describe("DEFAULT_WM_LAYOUT", () => {
+  it("anchors bottom-left at ~4.5% of image height", () => {
+    expect(DEFAULT_WM_LAYOUT).toEqual({ x: 0.03, y: 0.92, size: 0.045 });
+  });
+});
+
+describe("buildStaticArgs with a watermark", () => {
+  it("overlays the watermark PNG and caps duration at the audio length", () => {
+    const args = buildStaticArgs("image.png", "audio.mp3", "out.mp4", undefined, {
+      x: 20, y: 400, durationSec: 42,
+    });
+    expect(args).toContain("wm.png");
+    expect(args).toContain(
+      "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2[bg];[bg][1:v]overlay=x=20:y=400[vout]",
+    );
+    expect(args).toEqual(expect.arrayContaining(["-map", "[vout]"]));
+    expect(args).toEqual(expect.arrayContaining(["-map", "2:a"]));
+    expect(args).toEqual(expect.arrayContaining(["-t", "42"])); // -loop 1 base is infinite
+    expect(args).not.toContain("-vf");
+    expect(args).not.toContain("viz_%05d.png");
+  });
+  it("chains viz then watermark overlays and caps at the viz duration", () => {
+    const args = buildStaticArgs(
+      "image.png", "audio.mp3", "out.mp4",
+      { x: 10, y: 200, fps: 30, durationSec: 3 },
+      { x: 20, y: 400, durationSec: 42 },
+    );
+    expect(args).toContain(
+      "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2[bg];" +
+        "[bg][1:v]overlay=x=10:y=200:shortest=1[v1];" +
+        "[v1][2:v]overlay=x=20:y=400[vout]",
+    );
+    expect(args).toEqual(expect.arrayContaining(["-map", "3:a"])); // audio shifts past both overlays
+    expect(args).toEqual(expect.arrayContaining(["-t", "3"]));
+  });
+});
+
+describe("buildAnimatedArgs with a watermark", () => {
+  it("overlays the watermark without a duration cap (concat video is finite)", () => {
+    const args = buildAnimatedArgs("audio.mp3", "out.mp4", undefined, {
+      x: 8, y: 16, durationSec: 42,
+    });
+    expect(args).toContain("wm.png");
+    expect(args).toContain(
+      "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2[bg];[bg][1:v]overlay=x=8:y=16[vout]",
+    );
+    expect(args).toEqual(expect.arrayContaining(["-map", "2:a"]));
+    expect(args).not.toContain("-t");
+  });
+  it("chains viz then watermark with the audio mapped past both", () => {
+    const args = buildAnimatedArgs(
+      "audio.mp3", "out.mp4",
+      { x: 0, y: 5, fps: 30, durationSec: 12 },
+      { x: 8, y: 16, durationSec: 42 },
+    );
+    expect(args).toContain(
+      "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2[bg];" +
+        "[bg][1:v]overlay=x=0:y=5:shortest=1[v1];" +
+        "[v1][2:v]overlay=x=8:y=16[vout]",
+    );
+    expect(args).toEqual(expect.arrayContaining(["-map", "3:a"]));
+    expect(args).toEqual(expect.arrayContaining(["-t", "12"]));
   });
 });

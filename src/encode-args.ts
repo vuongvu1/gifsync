@@ -14,16 +14,46 @@ export const DEFAULT_VIZ_LAYOUT: VizLayout = { x: 0, y: 0.75, w: 1, h: 0.25 };
 // viz length (frames/fps ≥ audio), so `-shortest` still ends output at the audio.
 export type VizArgs = { x: number; y: number; fps: number; durationSec: number };
 
-const VIZ_OVERLAY = (x: number, y: number) =>
-  `[0:v]${EVEN_SCALE}[bg];[bg][1:v]overlay=x=${x}:y=${y}:shortest=1[vout]`;
+// Normalized watermark layout: x/y anchor the text's top-left, size is the font
+// height as a fraction of the image height.
+export type WmLayout = { x: number; y: number; size: number };
+
+export const DEFAULT_WM_LAYOUT: WmLayout = { x: 0.03, y: 0.92, size: 0.045 };
+
+// Integer overlay coords (px) for the single watermark PNG, plus the audio
+// duration — used as the `-t` cap when the watermark is the only overlay on an
+// infinite `-loop 1` still image.
+export type WmArgs = { x: number; y: number; durationSec: number };
+
+export const WM_FILE = "wm.png";
+
+// Overlay chain, left to right: base → viz (per-frame PNG sequence) → watermark
+// (one static PNG; ffmpeg's default eof_action=repeat holds it for the whole
+// video). Input indices shift with whichever overlays are present.
+function overlayGraph(viz?: VizArgs, wm?: WmArgs): string {
+  const steps = [`[0:v]${EVEN_SCALE}[bg]`];
+  let cur = "bg";
+  let idx = 1;
+  if (viz) {
+    const next = wm ? "v1" : "vout";
+    steps.push(`[${cur}][${idx}:v]overlay=x=${viz.x}:y=${viz.y}:shortest=1[${next}]`);
+    cur = next;
+    idx += 1;
+  }
+  if (wm) {
+    steps.push(`[${cur}][${idx}:v]overlay=x=${wm.x}:y=${wm.y}[vout]`);
+  }
+  return steps.join(";");
+}
 
 export function buildStaticArgs(
   imageName: string,
   audioName: string,
   out: string,
   viz?: VizArgs,
+  wm?: WmArgs,
 ): string[] {
-  if (!viz) {
+  if (!viz && !wm) {
     return [
       "-loop", "1",
       "-i", imageName,
@@ -37,31 +67,34 @@ export function buildStaticArgs(
       out,
     ];
   }
-  return [
-    "-loop", "1",
-    "-i", imageName,
-    "-framerate", String(viz.fps),
-    "-i", "viz_%05d.png",
-    "-i", audioName,
-    "-filter_complex", VIZ_OVERLAY(viz.x, viz.y),
+  const args = ["-loop", "1", "-i", imageName];
+  if (viz) args.push("-framerate", String(viz.fps), "-i", "viz_%05d.png");
+  if (wm) args.push("-i", WM_FILE);
+  args.push("-i", audioName);
+  const audioIdx = 1 + (viz ? 1 : 0) + (wm ? 1 : 0);
+  args.push(
+    "-filter_complex", overlayGraph(viz, wm),
     "-map", "[vout]",
-    "-map", "2:a",
-    "-t", String(viz.durationSec),
+    "-map", `${audioIdx}:a`,
+    // Cap the infinite -loop 1 base: viz length when present, else audio length.
+    "-t", String(viz ? viz.durationSec : wm!.durationSec),
     "-tune", "stillimage",
     "-pix_fmt", "yuv420p",
     "-c:v", "libx264",
     "-c:a", "aac",
     "-shortest",
     out,
-  ];
+  );
+  return args;
 }
 
 export function buildAnimatedArgs(
   audioName: string,
   out: string,
   viz?: VizArgs,
+  wm?: WmArgs,
 ): string[] {
-  if (!viz) {
+  if (!viz && !wm) {
     return [
       "-f", "concat",
       "-safe", "0",
@@ -75,23 +108,22 @@ export function buildAnimatedArgs(
       out,
     ];
   }
-  return [
-    "-f", "concat",
-    "-safe", "0",
-    "-i", "list.txt",
-    "-framerate", String(viz.fps),
-    "-i", "viz_%05d.png",
-    "-i", audioName,
-    "-filter_complex", VIZ_OVERLAY(viz.x, viz.y),
-    "-map", "[vout]",
-    "-map", "2:a",
-    "-t", String(viz.durationSec),
+  const args = ["-f", "concat", "-safe", "0", "-i", "list.txt"];
+  if (viz) args.push("-framerate", String(viz.fps), "-i", "viz_%05d.png");
+  if (wm) args.push("-i", WM_FILE);
+  args.push("-i", audioName);
+  const audioIdx = 1 + (viz ? 1 : 0) + (wm ? 1 : 0);
+  args.push("-filter_complex", overlayGraph(viz, wm), "-map", "[vout]", "-map", `${audioIdx}:a`);
+  // The concat video is finite, so only the viz PNG stream needs a cap.
+  if (viz) args.push("-t", String(viz.durationSec));
+  args.push(
     "-pix_fmt", "yuv420p",
     "-c:v", "libx264",
     "-c:a", "aac",
     "-shortest",
     out,
-  ];
+  );
+  return args;
 }
 
 export function computeRepeatCount(

@@ -6,12 +6,20 @@ import "@radix-ui/colors/red.css";
 import "@radix-ui/colors/red-dark.css";
 
 import { decodeAnimated } from "./decode";
-import type { EncodeInput } from "./encode";
+import type { EncodeInput, WmInput } from "./encode";
 import { encode } from "./encode";
 import { getAudioDuration, renderPreview } from "./preview";
 import { createPreviewViz } from "./preview-viz";
-import { type VizStyle, type VizLayout, DEFAULT_VIZ_LAYOUT } from "./encode-args";
-import { renderVizFrames } from "./viz-frames";
+import { createPreviewWm } from "./preview-wm";
+import {
+  type VizStyle,
+  type VizLayout,
+  type WmLayout,
+  DEFAULT_VIZ_LAYOUT,
+  DEFAULT_WM_LAYOUT,
+} from "./encode-args";
+import { canvasToPng, renderVizFrames } from "./viz-frames";
+import { drawWatermark, wmMetrics } from "./wm-draw";
 
 // Radix dark color scales live under `.dark`; mirror the OS preference onto <html>.
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
@@ -47,7 +55,11 @@ app.innerHTML = `
         <option value="waveform">Waveform</option>
       </select>
     </label>
-    <p class="hint">Drag the visualizer to move it · drag the corner to resize. It's rendered into the exported video.</p>
+    <label class="field">
+      Watermark
+      <input id="wmText" type="text" value="https://late-night-vibes.com" placeholder="Leave empty for none" />
+    </label>
+    <p class="hint">Drag the visualizer or watermark to move it · drag the corner to resize. Both are rendered into the exported video.</p>
   </div>
   <button id="generate" disabled>Generate video</button>
   <progress id="progress" value="0" max="1" hidden></progress>
@@ -62,6 +74,7 @@ const audioDrop = app.querySelector<HTMLLabelElement>("#audioDrop")!;
 const imageHost = app.querySelector<HTMLDivElement>("#imageHost")!;
 const audioEl = app.querySelector<HTMLAudioElement>("#audio")!;
 const vizSelect = app.querySelector<HTMLSelectElement>("#vizStyle")!;
+const wmInput = app.querySelector<HTMLInputElement>("#wmText")!;
 const generateBtn = app.querySelector<HTMLButtonElement>("#generate")!;
 const progressEl = app.querySelector<HTMLProgressElement>("#progress")!;
 const statusEl = app.querySelector<HTMLDivElement>("#status")!;
@@ -70,11 +83,15 @@ const downloadEl = app.querySelector<HTMLDivElement>("#download")!;
 const previewViz = createPreviewViz(audioEl, (l) => {
   vizLayout = l;
 });
+const previewWm = createPreviewWm((l) => {
+  wmLayout = l;
+});
 
 let imageFile: File | null = null;
 let audioFile: File | null = null;
 let lastDownloadUrl: string | null = null;
 let vizLayout: VizLayout = { ...DEFAULT_VIZ_LAYOUT };
+let wmLayout: WmLayout = { ...DEFAULT_WM_LAYOUT };
 
 function refresh(): void {
   imageDrop.classList.toggle("filled", imageFile !== null);
@@ -86,6 +103,10 @@ function refresh(): void {
     if (canvas) previewViz.attach(canvas);
     previewViz.setStyle(readVizStyle(vizSelect.value));
     previewViz.setLayout(vizLayout);
+    const wmCanvas = imageHost.querySelector<HTMLCanvasElement>("#wmCanvas");
+    if (wmCanvas) previewWm.attach(wmCanvas);
+    previewWm.setLayout(wmLayout);
+    previewWm.setText(wmInput.value);
   }
 }
 
@@ -120,6 +141,10 @@ vizSelect.addEventListener("change", () => {
   previewViz.setStyle(readVizStyle(vizSelect.value));
 });
 
+wmInput.addEventListener("input", () => {
+  previewWm.setText(wmInput.value);
+});
+
 function ext(file: File): string {
   const dot = file.name.lastIndexOf(".");
   return dot >= 0 ? file.name.slice(dot) : "";
@@ -136,13 +161,20 @@ type VizData = { frames: Uint8Array[]; x: number; y: number; fps: number } | nul
 
 const VIZ_FPS = 30;
 
-async function prepareViz(image: File, audio: File): Promise<VizData> {
-  const style = readVizStyle(vizSelect.value);
-  if (style === "none") return null;
+// Output dimensions after ffmpeg's even-scale (yuv420p needs even sizes); the
+// normalized layouts map onto these. For animated images this is the first frame.
+async function evenDims(image: File): Promise<{ evenW: number; evenH: number }> {
   const bmp = await createImageBitmap(image);
   const evenW = bmp.width - (bmp.width % 2);
   const evenH = bmp.height - (bmp.height % 2);
   bmp.close();
+  return { evenW, evenH };
+}
+
+async function prepareViz(image: File, audio: File): Promise<VizData> {
+  const style = readVizStyle(vizSelect.value);
+  if (style === "none") return null;
+  const { evenW, evenH } = await evenDims(image);
   const boxW = Math.max(1, Math.round(vizLayout.w * evenW));
   const boxH = Math.max(1, Math.round(vizLayout.h * evenH));
   const x = Math.round(vizLayout.x * evenW);
@@ -153,7 +185,33 @@ async function prepareViz(image: File, audio: File): Promise<VizData> {
   return { frames, x, y, fps: VIZ_FPS };
 }
 
-async function buildInput(image: File, audio: File, viz: VizData): Promise<EncodeInput> {
+// One transparent PNG at output resolution, same wm-draw code as the preview.
+async function prepareWm(image: File, audio: File): Promise<WmInput | null> {
+  const text = wmInput.value.trim();
+  if (!text) return null;
+  const { evenW, evenH } = await evenDims(image);
+  const fontPx = Math.max(8, Math.round(wmLayout.size * evenH));
+  const canvas = document.createElement("canvas");
+  const c = canvas.getContext("2d");
+  if (!c) throw new Error("Could not get a 2D canvas context for the watermark.");
+  const m = wmMetrics(c, text, fontPx);
+  canvas.width = m.boxW;
+  canvas.height = m.boxH;
+  drawWatermark(c, text, fontPx, m.pad, m.pad);
+  return {
+    png: await canvasToPng(canvas),
+    x: Math.round(wmLayout.x * evenW) - m.pad,
+    y: Math.round(wmLayout.y * evenH) - m.pad,
+    durationSec: await getAudioDuration(audio),
+  };
+}
+
+async function buildInput(
+  image: File,
+  audio: File,
+  viz: VizData,
+  wm: WmInput | null,
+): Promise<EncodeInput> {
   const audioBytes = new Uint8Array(await audio.arrayBuffer());
   const audioName = `audio${ext(audio)}`;
   const animatedType = image.type === "image/gif" || image.type === "image/webp";
@@ -161,7 +219,7 @@ async function buildInput(image: File, audio: File, viz: VizData): Promise<Encod
     const frames = await decodeAnimated(image);
     if (frames.length > 1) {
       const audioDurationSec = await getAudioDuration(audio);
-      return { kind: "animated", frames, audio: audioBytes, audioName, audioDurationSec, viz };
+      return { kind: "animated", frames, audio: audioBytes, audioName, audioDurationSec, viz, wm };
     }
   }
   const imageBytes = new Uint8Array(await image.arrayBuffer());
@@ -172,6 +230,7 @@ async function buildInput(image: File, audio: File, viz: VizData): Promise<Encod
     audio: audioBytes,
     audioName,
     viz,
+    wm,
   };
 }
 
@@ -205,8 +264,9 @@ generateBtn.addEventListener("click", async () => {
 
   try {
     const viz = await prepareViz(imageFile, audioFile);
+    const wm = await prepareWm(imageFile, audioFile);
     statusEl.textContent = "Decoding…";
-    const input = await buildInput(imageFile, audioFile, viz);
+    const input = await buildInput(imageFile, audioFile, viz, wm);
     statusEl.textContent = "Encoding…";
     const blob = await encode(input, (ratio) => {
       progressEl.value = ratio;
