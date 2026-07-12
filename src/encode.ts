@@ -1,7 +1,7 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import type { Frame } from "./decode";
-import type { VizArgs, WmArgs } from "./encode-args";
+import type { Dims, VizArgs, WmArgs } from "./encode-args";
 import {
   WM_FILE,
   buildAnimatedArgs,
@@ -22,6 +22,7 @@ export type StaticInput = {
   audioName: string;
   viz: VizInput | null;
   wm: WmInput | null;
+  dims: Dims;
 };
 
 export type AnimatedInput = {
@@ -32,6 +33,7 @@ export type AnimatedInput = {
   audioDurationSec: number;
   viz: VizInput | null;
   wm: WmInput | null;
+  dims: Dims;
 };
 
 export type EncodeInput = StaticInput | AnimatedInput;
@@ -107,6 +109,7 @@ export async function encode(
         ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps, rot: input.viz.rot }
         : undefined,
       wmArgs,
+      input.dims,
     );
   } else {
     const names = input.frames.map(
@@ -138,6 +141,7 @@ export async function encode(
         ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps, rot: input.viz.rot }
         : undefined,
       wmArgs,
+      input.dims,
     );
   }
 

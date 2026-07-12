@@ -12,12 +12,15 @@ import { getAudioDuration, renderPreview } from "./preview";
 import { createPreviewViz } from "./preview-viz";
 import { createPreviewWm } from "./preview-wm";
 import {
+  type Dims,
+  type ResPreset,
   type VizStyle,
   type VizLayout,
   type WmLayout,
   DEFAULT_VIZ_LAYOUT,
   DEFAULT_WM_LAYOUT,
   rotatedSize,
+  targetDims,
 } from "./encode-args";
 import { canvasToPng, renderVizFrames } from "./viz-frames";
 import { drawWatermark, wmMetrics } from "./wm-draw";
@@ -61,6 +64,15 @@ app.innerHTML = `
       <input id="wmText" type="text" value="https://late-night-vibes.com" placeholder="Leave empty for none" />
     </label>
     <label class="field">
+      Resolution
+      <select id="resolution">
+        <option value="original" selected>Original</option>
+        <option value="1080p">1080p</option>
+        <option value="720p">720p</option>
+        <option value="480p">480p</option>
+      </select>
+    </label>
+    <label class="field">
       <span>Visualizer rotation · <span id="vizRotVal">0°</span></span>
       <input id="vizRot" type="range" min="-180" max="180" step="1" value="0" />
     </label>
@@ -83,6 +95,8 @@ const audioDrop = app.querySelector<HTMLLabelElement>("#audioDrop")!;
 const imageHost = app.querySelector<HTMLDivElement>("#imageHost")!;
 const audioEl = app.querySelector<HTMLAudioElement>("#audio")!;
 const vizSelect = app.querySelector<HTMLSelectElement>("#vizStyle")!;
+const resSelect = app.querySelector<HTMLSelectElement>("#resolution")!;
+const resOriginalOpt = resSelect.querySelector<HTMLOptionElement>('option[value="original"]')!;
 const wmInput = app.querySelector<HTMLInputElement>("#wmText")!;
 const vizRotInput = app.querySelector<HTMLInputElement>("#vizRot")!;
 const vizRotVal = app.querySelector<HTMLSpanElement>("#vizRotVal")!;
@@ -123,6 +137,17 @@ function refresh(): void {
   }
 }
 
+// Show the source height in the Original option (presets are named by height).
+async function updateResLabel(): Promise<void> {
+  if (!imageFile) {
+    resOriginalOpt.textContent = "Original";
+    return;
+  }
+  const bmp = await createImageBitmap(imageFile);
+  resOriginalOpt.textContent = `Original (${bmp.height}px)`;
+  bmp.close();
+}
+
 imageInput.addEventListener("change", () => {
   const f = imageInput.files?.[0] ?? null;
   if (f && !f.type.startsWith("image/")) {
@@ -135,6 +160,7 @@ imageInput.addEventListener("change", () => {
   statusEl.textContent = "";
   statusEl.className = "";
   refresh();
+  void updateResLabel();
 });
 audioInput.addEventListener("change", () => {
   const f = audioInput.files?.[0] ?? null;
@@ -182,24 +208,29 @@ function readVizStyle(value: string): VizStyle {
   return (VIZ_STYLES as readonly string[]).includes(value) ? (value as VizStyle) : "none";
 }
 
+const RES_PRESETS: readonly ResPreset[] = ["original", "1080p", "720p", "480p"];
+function readResPreset(value: string): ResPreset {
+  return (RES_PRESETS as readonly string[]).includes(value) ? (value as ResPreset) : "original";
+}
+
 type VizData = { frames: Uint8Array[]; x: number; y: number; fps: number; rot: number } | null;
 
 const VIZ_FPS = 30;
 
-// Output dimensions after ffmpeg's even-scale (yuv420p needs even sizes); the
-// normalized layouts map onto these. For animated images this is the first frame.
-async function evenDims(image: File): Promise<{ evenW: number; evenH: number }> {
+// Output dimensions the normalized layouts map onto: the source size (first
+// frame for animated images) fitted to the selected resolution preset. Even
+// (yuv420p) and exactly what ffmpeg scales to, so overlay coords line up.
+async function outputDims(image: File): Promise<Dims> {
   const bmp = await createImageBitmap(image);
-  const evenW = bmp.width - (bmp.width % 2);
-  const evenH = bmp.height - (bmp.height % 2);
+  const dims = targetDims(bmp.width, bmp.height, readResPreset(resSelect.value));
   bmp.close();
-  return { evenW, evenH };
+  return dims;
 }
 
 async function prepareViz(image: File, audio: File): Promise<VizData> {
   const style = readVizStyle(vizSelect.value);
   if (style === "none") return null;
-  const { evenW, evenH } = await evenDims(image);
+  const { w: evenW, h: evenH } = await outputDims(image);
   const boxW = Math.max(1, Math.round(vizLayout.w * evenW));
   const boxH = Math.max(1, Math.round(vizLayout.h * evenH));
   const rot = vizLayout.rot % 360;
@@ -222,7 +253,7 @@ async function prepareViz(image: File, audio: File): Promise<VizData> {
 async function prepareWm(image: File, audio: File): Promise<WmInput | null> {
   const text = wmInput.value.trim();
   if (!text) return null;
-  const { evenW, evenH } = await evenDims(image);
+  const { w: evenW, h: evenH } = await outputDims(image);
   const fontPx = Math.max(8, Math.round(wmLayout.size * evenH));
   const canvas = document.createElement("canvas");
   const c = canvas.getContext("2d");
@@ -257,12 +288,13 @@ async function buildInput(
 ): Promise<EncodeInput> {
   const audioBytes = new Uint8Array(await audio.arrayBuffer());
   const audioName = `audio${ext(audio)}`;
+  const dims = await outputDims(image);
   const animatedType = image.type === "image/gif" || image.type === "image/webp";
   if (animatedType) {
     const frames = await decodeAnimated(image);
     if (frames.length > 1) {
       const audioDurationSec = await getAudioDuration(audio);
-      return { kind: "animated", frames, audio: audioBytes, audioName, audioDurationSec, viz, wm };
+      return { kind: "animated", frames, audio: audioBytes, audioName, audioDurationSec, viz, wm, dims };
     }
   }
   const imageBytes = new Uint8Array(await image.arrayBuffer());
@@ -274,6 +306,7 @@ async function buildInput(
     audioName,
     viz,
     wm,
+    dims,
   };
 }
 

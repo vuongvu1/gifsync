@@ -7,6 +7,7 @@ import {
   buildStaticArgs,
   centerBounds,
   computeRepeatCount,
+  targetDims,
   rotatedSize,
   screenToLocal,
 } from "./encode-args";
@@ -288,5 +289,50 @@ describe("buildAnimatedArgs with a watermark", () => {
     );
     expect(args).toEqual(expect.arrayContaining(["-map", "3:a"]));
     expect(args).toEqual(expect.arrayContaining(["-t", "12"]));
+  });
+});
+
+describe("targetDims", () => {
+  it("even-rounds the source for 'original' without scaling", () => {
+    expect(targetDims(1001, 601, "original")).toEqual({ w: 1000, h: 600 });
+  });
+  it("downscales to fit the 1080p box, keeping aspect", () => {
+    expect(targetDims(3840, 2160, "1080p")).toEqual({ w: 1920, h: 1080 });
+  });
+  it("upscales a smaller source to fill the preset box", () => {
+    expect(targetDims(640, 360, "1080p")).toEqual({ w: 1920, h: 1080 });
+  });
+  it("upscales to fit the box, not past it", () => {
+    // 800x556 → limited by height: 1080/556 ≈ 1.9424 → 1553x1080 → even 1552x1080
+    expect(targetDims(800, 556, "1080p")).toEqual({ w: 1552, h: 1080 });
+  });
+  it("fits a panorama by width, not just height", () => {
+    expect(targetDims(4000, 1000, "1080p")).toEqual({ w: 1920, h: 480 });
+  });
+  it("fits a portrait by height and even-rounds the width", () => {
+    expect(targetDims(1080, 1920, "720p")).toEqual({ w: 404, h: 720 });
+  });
+});
+
+describe("output resolution in args", () => {
+  it("uses exact scale dims in buildStaticArgs without overlays", () => {
+    const args = buildStaticArgs("image.png", "audio.mp3", "out.mp4", undefined, undefined, { w: 1280, h: 720 });
+    expect(args).toContain("scale=1280:720");
+    expect(args).not.toContain("scale=trunc(iw/2)*2:trunc(ih/2)*2");
+  });
+  it("uses exact scale dims in the overlay graph", () => {
+    const args = buildStaticArgs(
+      "image.png", "audio.mp3", "out.mp4",
+      { x: 10, y: 200, fps: 15, durationSec: 3 },
+      undefined,
+      { w: 1920, h: 1080 },
+    );
+    expect(args).toContain(
+      "[0:v]scale=1920:1080[bg];[bg][1:v]overlay=x=10:y=200:shortest=1[vout]",
+    );
+  });
+  it("uses exact scale dims in buildAnimatedArgs", () => {
+    const args = buildAnimatedArgs("audio.mp3", "out.mp4", undefined, undefined, { w: 852, h: 480 });
+    expect(args).toContain("scale=852:480");
   });
 });

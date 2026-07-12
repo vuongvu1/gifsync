@@ -1,5 +1,32 @@
 const EVEN_SCALE = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
 
+export type Dims = { w: number; h: number };
+
+export type ResPreset = "original" | "1080p" | "720p" | "480p";
+
+const RES_BOXES: Record<Exclude<ResPreset, "original">, Dims> = {
+  "1080p": { w: 1920, h: 1080 },
+  "720p": { w: 1280, h: 720 },
+  "480p": { w: 854, h: 480 },
+};
+
+// Output size for a preset: fit inside the preset box (so panoramas shrink by
+// width too), keeping aspect — up- or downscaling as needed — rounded down to
+// even (yuv420p). Overlays render at the output size, so they stay sharp even
+// when the base image is upscaled.
+export function targetDims(srcW: number, srcH: number, preset: ResPreset): Dims {
+  const box = preset === "original" ? null : RES_BOXES[preset];
+  const s = box ? Math.min(box.w / srcW, box.h / srcH) : 1;
+  const even = (n: number) => Math.max(2, Math.floor(n / 2) * 2);
+  return { w: even(srcW * s), h: even(srcH * s) };
+}
+
+// Exact dims when the caller computed them (overlay coords must match); the
+// even-truncate expression otherwise.
+function scaleFilter(dims?: Dims): string {
+  return dims ? `scale=${dims.w}:${dims.h}` : EVEN_SCALE;
+}
+
 export type VizStyle = "none" | "bars" | "waveform";
 
 // rot: degrees clockwise, applied around the box center (preview CSS rotate and
@@ -84,8 +111,8 @@ function rotateNode(srcIdx: number, deg: number, out: string): string {
 // Overlay chain, left to right: base → viz (per-frame PNG sequence) → watermark
 // (one static PNG; ffmpeg's default eof_action=repeat holds it for the whole
 // video). Input indices shift with whichever overlays are present.
-function overlayGraph(viz?: VizArgs, wm?: WmArgs): string {
-  const steps = [`[0:v]${EVEN_SCALE}[bg]`];
+function overlayGraph(viz?: VizArgs, wm?: WmArgs, dims?: Dims): string {
+  const steps = [`[0:v]${scaleFilter(dims)}[bg]`];
   let cur = "bg";
   let idx = 1;
   if (viz) {
@@ -116,6 +143,7 @@ export function buildStaticArgs(
   out: string,
   viz?: VizArgs,
   wm?: WmArgs,
+  dims?: Dims,
 ): string[] {
   if (!viz && !wm) {
     return [
@@ -124,7 +152,7 @@ export function buildStaticArgs(
       "-i", audioName,
       "-tune", "stillimage",
       "-pix_fmt", "yuv420p",
-      "-vf", EVEN_SCALE,
+      "-vf", scaleFilter(dims),
       "-c:v", "libx264",
       "-c:a", "aac",
       "-shortest",
@@ -137,7 +165,7 @@ export function buildStaticArgs(
   args.push("-i", audioName);
   const audioIdx = 1 + (viz ? 1 : 0) + (wm ? 1 : 0);
   args.push(
-    "-filter_complex", overlayGraph(viz, wm),
+    "-filter_complex", overlayGraph(viz, wm, dims),
     "-map", "[vout]",
     "-map", `${audioIdx}:a`,
     // Cap the infinite -loop 1 base: viz length when present, else audio length.
@@ -157,6 +185,7 @@ export function buildAnimatedArgs(
   out: string,
   viz?: VizArgs,
   wm?: WmArgs,
+  dims?: Dims,
 ): string[] {
   if (!viz && !wm) {
     return [
@@ -165,7 +194,7 @@ export function buildAnimatedArgs(
       "-i", "list.txt",
       "-i", audioName,
       "-pix_fmt", "yuv420p",
-      "-vf", EVEN_SCALE,
+      "-vf", scaleFilter(dims),
       "-c:v", "libx264",
       "-c:a", "aac",
       "-shortest",
@@ -177,7 +206,7 @@ export function buildAnimatedArgs(
   if (wm) args.push("-i", WM_FILE);
   args.push("-i", audioName);
   const audioIdx = 1 + (viz ? 1 : 0) + (wm ? 1 : 0);
-  args.push("-filter_complex", overlayGraph(viz, wm), "-map", "[vout]", "-map", `${audioIdx}:a`);
+  args.push("-filter_complex", overlayGraph(viz, wm, dims), "-map", "[vout]", "-map", `${audioIdx}:a`);
   // The concat video is finite, so only the viz PNG stream needs a cap.
   if (viz) args.push("-t", String(viz.durationSec));
   args.push(
