@@ -10,7 +10,9 @@ import {
   computeRepeatCount,
 } from "./encode-args";
 
-export type WmInput = { png: Uint8Array; x: number; y: number; durationSec: number };
+export type WmInput = { png: Uint8Array; x: number; y: number; rot: number; durationSec: number };
+
+export type VizInput = { frames: Uint8Array[]; x: number; y: number; fps: number; rot: number };
 
 export type StaticInput = {
   kind: "static";
@@ -18,7 +20,7 @@ export type StaticInput = {
   imageName: string;
   audio: Uint8Array;
   audioName: string;
-  viz: { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
+  viz: VizInput | null;
   wm: WmInput | null;
 };
 
@@ -28,7 +30,7 @@ export type AnimatedInput = {
   audio: Uint8Array;
   audioName: string;
   audioDurationSec: number;
-  viz: { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
+  viz: VizInput | null;
   wm: WmInput | null;
 };
 
@@ -82,7 +84,7 @@ export async function encode(
   if (input.wm) {
     await ffmpeg.writeFile(WM_FILE, input.wm.png);
     fsFiles.push(WM_FILE);
-    wmArgs = { x: input.wm.x, y: input.wm.y, durationSec: input.wm.durationSec };
+    wmArgs = { x: input.wm.x, y: input.wm.y, durationSec: input.wm.durationSec, rot: input.wm.rot };
   }
 
   if (input.kind === "static") {
@@ -102,7 +104,7 @@ export async function encode(
       input.audioName,
       "out.mp4",
       input.viz
-        ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps }
+        ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps, rot: input.viz.rot }
         : undefined,
       wmArgs,
     );
@@ -133,7 +135,7 @@ export async function encode(
       input.audioName,
       "out.mp4",
       input.viz
-        ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps }
+        ? { x: input.viz.x, y: input.viz.y, fps: input.viz.fps, durationSec: input.viz.frames.length / input.viz.fps, rot: input.viz.rot }
         : undefined,
       wmArgs,
     );

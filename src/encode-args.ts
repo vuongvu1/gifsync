@@ -2,30 +2,84 @@ const EVEN_SCALE = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
 
 export type VizStyle = "none" | "bars" | "waveform";
 
-export type VizLayout = { x: number; y: number; w: number; h: number };
+// rot: degrees clockwise, applied around the box center (preview CSS rotate and
+// ffmpeg's rotate filter both spin clockwise for positive angles).
+export type VizLayout = { x: number; y: number; w: number; h: number; rot: number };
 
 // Bottom strip, full width, quarter height — the default box.
-export const DEFAULT_VIZ_LAYOUT: VizLayout = { x: 0, y: 0.75, w: 1, h: 0.25 };
+export const DEFAULT_VIZ_LAYOUT: VizLayout = { x: 0, y: 0.75, w: 1, h: 0.25, rot: 0 };
 
 // Integer overlay coords (px), frame rate, and a duration cap (s) for the
 // pre-rendered viz PNG sequence. The `-t` cap guarantees the encode terminates
 // even though the base image uses an infinite `-loop 1` (older ffmpeg cores
 // don't always stop an infinite input on `-shortest` alone). durationSec is the
 // viz length (frames/fps ≥ audio), so `-shortest` still ends output at the audio.
-export type VizArgs = { x: number; y: number; fps: number; durationSec: number };
+export type VizArgs = { x: number; y: number; fps: number; durationSec: number; rot?: number };
 
 // Normalized watermark layout: x/y anchor the text's top-left, size is the font
-// height as a fraction of the image height.
-export type WmLayout = { x: number; y: number; size: number };
+// height as a fraction of the image height, rot is degrees clockwise around the
+// text box center.
+export type WmLayout = { x: number; y: number; size: number; rot: number };
 
-export const DEFAULT_WM_LAYOUT: WmLayout = { x: 0.03, y: 0.92, size: 0.045 };
+export const DEFAULT_WM_LAYOUT: WmLayout = { x: 0.03, y: 0.92, size: 0.045, rot: 0 };
 
 // Integer overlay coords (px) for the single watermark PNG, plus the audio
 // duration — used as the `-t` cap when the watermark is the only overlay on an
 // infinite `-loop 1` still image.
-export type WmArgs = { x: number; y: number; durationSec: number };
+export type WmArgs = { x: number; y: number; durationSec: number; rot?: number };
 
 export const WM_FILE = "wm.png";
+
+// Bounding box of a w×h rect rotated by deg — mirrors ffmpeg's rotw()/roth(),
+// so overlay coords computed from it line up with the rotate filter's output.
+export function rotatedSize(w: number, h: number, deg: number): { w: number; h: number } {
+  const r = (deg * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(r));
+  const sin = Math.abs(Math.sin(r));
+  return { w: w * cos + h * sin, h: w * sin + h * cos };
+}
+
+// Normalized travel range for the CENTER of a rotated box while dragging: the
+// rotated bounding box must stay inside the host. Px inputs because the
+// normalized w/h units are anisotropic. If the bbox doesn't fit on an axis,
+// the range collapses to the frame center — predictable instead of jumpy.
+export function centerBounds(
+  boxWPx: number,
+  boxHPx: number,
+  rot: number,
+  hostW: number,
+  hostH: number,
+): { minX: number; maxX: number; minY: number; maxY: number } {
+  const rs = rotatedSize(boxWPx, boxHPx, rot);
+  let minX = rs.w / 2 / hostW;
+  let maxX = 1 - minX;
+  let minY = rs.h / 2 / hostH;
+  let maxY = 1 - minY;
+  if (minX > maxX) minX = maxX = 0.5;
+  if (minY > maxY) minY = maxY = 0.5;
+  return { minX, maxX, minY, maxY };
+}
+
+// Rotate a screen-space pointer delta into the local axes of a box rotated by
+// deg clockwise (inverse rotation, y-down coords). Resizing a rotated box must
+// grow its local width/height, not the screen x/y.
+export function screenToLocal(dx: number, dy: number, deg: number): { x: number; y: number } {
+  const r = (deg * Math.PI) / 180;
+  return {
+    x: dx * Math.cos(r) + dy * Math.sin(r),
+    y: -dx * Math.sin(r) + dy * Math.cos(r),
+  };
+}
+
+function rad(deg: number): string {
+  return ((deg * Math.PI) / 180).toFixed(6);
+}
+
+// `rotate` keeps the PNG's alpha; c=none fills the expanded corners transparent.
+function rotateNode(srcIdx: number, deg: number, out: string): string {
+  const a = rad(deg);
+  return `[${srcIdx}:v]rotate=${a}:ow=rotw(${a}):oh=roth(${a}):c=none[${out}]`;
+}
 
 // Overlay chain, left to right: base → viz (per-frame PNG sequence) → watermark
 // (one static PNG; ffmpeg's default eof_action=repeat holds it for the whole
@@ -35,13 +89,23 @@ function overlayGraph(viz?: VizArgs, wm?: WmArgs): string {
   let cur = "bg";
   let idx = 1;
   if (viz) {
+    let src = `${idx}:v`;
+    if (viz.rot) {
+      steps.push(rotateNode(idx, viz.rot, "vr"));
+      src = "vr";
+    }
     const next = wm ? "v1" : "vout";
-    steps.push(`[${cur}][${idx}:v]overlay=x=${viz.x}:y=${viz.y}:shortest=1[${next}]`);
+    steps.push(`[${cur}][${src}]overlay=x=${viz.x}:y=${viz.y}:shortest=1[${next}]`);
     cur = next;
     idx += 1;
   }
   if (wm) {
-    steps.push(`[${cur}][${idx}:v]overlay=x=${wm.x}:y=${wm.y}[vout]`);
+    let src = `${idx}:v`;
+    if (wm.rot) {
+      steps.push(rotateNode(idx, wm.rot, "wr"));
+      src = "wr";
+    }
+    steps.push(`[${cur}][${src}]overlay=x=${wm.x}:y=${wm.y}[vout]`);
   }
   return steps.join(";");
 }

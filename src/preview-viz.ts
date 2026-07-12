@@ -1,4 +1,4 @@
-import { type VizStyle, type VizLayout, DEFAULT_VIZ_LAYOUT } from "./encode-args";
+import { type VizStyle, type VizLayout, DEFAULT_VIZ_LAYOUT, centerBounds, screenToLocal } from "./encode-args";
 import { drawBars, drawWave } from "./viz-draw";
 
 const HANDLE = 16; // bottom-right resize hit zone (px)
@@ -60,6 +60,8 @@ export function createPreviewViz(
     canvas.style.top = `${layout.y * 100}%`;
     canvas.style.width = `${layout.w * 100}%`;
     canvas.style.height = `${layout.h * 100}%`;
+    // around the box center, like the export's rotate filter
+    canvas.style.transform = layout.rot ? `rotate(${layout.rot}deg)` : "";
     canvas.style.pointerEvents = style === "none" ? "none" : "auto";
   }
 
@@ -144,20 +146,30 @@ export function createPreviewViz(
     if (!host) return;
     const rect = host.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return; // guard: avoid NaN deltas
-    const dx = (e.clientX - startX) / rect.width;
-    const dy = (e.clientY - startY) / rect.height;
     if (mode === "move") {
-      // clamp the top-left so the whole box stays in frame (no sliders to recover it)
-      layout = {
-        ...startLayout,
-        x: clamp(startLayout.x + dx, 0, 1 - startLayout.w),
-        y: clamp(startLayout.y + dy, 0, 1 - startLayout.h),
-      };
+      const dx = (e.clientX - startX) / rect.width;
+      const dy = (e.clientY - startY) / rect.height;
+      // clamp the box CENTER against the rotated bounding box — a rotated
+      // strip is visually narrow, so its travel range swaps axes with it
+      const b = centerBounds(
+        startLayout.w * rect.width,
+        startLayout.h * rect.height,
+        startLayout.rot,
+        rect.width,
+        rect.height,
+      );
+      const cx = clamp(startLayout.x + startLayout.w / 2 + dx, b.minX, b.maxX);
+      const cy = clamp(startLayout.y + startLayout.h / 2 + dy, b.minY, b.maxY);
+      layout = { ...startLayout, x: cx - startLayout.w / 2, y: cy - startLayout.h / 2 };
     } else {
+      // the corner handle resizes along the box's own axes, so rotate the
+      // pointer delta into local space (in px — the % normalization is
+      // anisotropic and would skew the rotation)
+      const local = screenToLocal(e.clientX - startX, e.clientY - startY, startLayout.rot);
       layout = {
         ...startLayout,
-        w: clamp(startLayout.w + dx, 0.05, 1),
-        h: clamp(startLayout.h + dy, 0.05, 1),
+        w: clamp(startLayout.w + local.x / rect.width, 0.05, 1),
+        h: clamp(startLayout.h + local.y / rect.height, 0.05, 1),
       };
     }
     applyLayout();

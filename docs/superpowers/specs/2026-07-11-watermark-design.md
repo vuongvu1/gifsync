@@ -46,6 +46,16 @@ Rejected alternatives:
 A single still-PNG overlay input persists for the whole video via ffmpeg's
 default `eof_action=repeat`. Audio stream index shifts with the optional inputs.
 
+## Rotation (added same day)
+
+Both overlays accept a rotation angle (degrees clockwise, −180…180, sliders in
+the controls). `VizLayout`/`WmLayout` gain `rot`. Preview applies CSS
+`rotate()` (center origin); export inserts an ffmpeg
+`rotate=<rad>:ow=rotw(<rad>):oh=roth(<rad>):c=none` node before the overlay —
+alpha-preserving, corners transparent. Because rotation expands the frame to
+the rotated bounding box, overlay coords are recomputed so the box center stays
+where the preview shows it (`rotatedSize()` mirrors `rotw`/`roth`).
+
 ## Testing
 
 Unit tests on `buildStaticArgs` / `buildAnimatedArgs` for: watermark-only,

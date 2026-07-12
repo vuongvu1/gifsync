@@ -17,6 +17,7 @@ import {
   type WmLayout,
   DEFAULT_VIZ_LAYOUT,
   DEFAULT_WM_LAYOUT,
+  rotatedSize,
 } from "./encode-args";
 import { canvasToPng, renderVizFrames } from "./viz-frames";
 import { drawWatermark, wmMetrics } from "./wm-draw";
@@ -59,6 +60,14 @@ app.innerHTML = `
       Watermark
       <input id="wmText" type="text" value="https://late-night-vibes.com" placeholder="Leave empty for none" />
     </label>
+    <label class="field">
+      <span>Visualizer rotation · <span id="vizRotVal">0°</span></span>
+      <input id="vizRot" type="range" min="-180" max="180" step="1" value="0" />
+    </label>
+    <label class="field">
+      <span>Watermark rotation · <span id="wmRotVal">0°</span></span>
+      <input id="wmRot" type="range" min="-180" max="180" step="1" value="0" />
+    </label>
     <p class="hint">Drag the visualizer or watermark to move it · drag the corner to resize. Both are rendered into the exported video.</p>
   </div>
   <button id="generate" disabled>Generate video</button>
@@ -75,6 +84,10 @@ const imageHost = app.querySelector<HTMLDivElement>("#imageHost")!;
 const audioEl = app.querySelector<HTMLAudioElement>("#audio")!;
 const vizSelect = app.querySelector<HTMLSelectElement>("#vizStyle")!;
 const wmInput = app.querySelector<HTMLInputElement>("#wmText")!;
+const vizRotInput = app.querySelector<HTMLInputElement>("#vizRot")!;
+const vizRotVal = app.querySelector<HTMLSpanElement>("#vizRotVal")!;
+const wmRotInput = app.querySelector<HTMLInputElement>("#wmRot")!;
+const wmRotVal = app.querySelector<HTMLSpanElement>("#wmRotVal")!;
 const generateBtn = app.querySelector<HTMLButtonElement>("#generate")!;
 const progressEl = app.querySelector<HTMLProgressElement>("#progress")!;
 const statusEl = app.querySelector<HTMLDivElement>("#status")!;
@@ -145,6 +158,18 @@ wmInput.addEventListener("input", () => {
   previewWm.setText(wmInput.value);
 });
 
+vizRotInput.addEventListener("input", () => {
+  vizLayout = { ...vizLayout, rot: Number(vizRotInput.value) };
+  vizRotVal.textContent = `${vizLayout.rot}°`;
+  previewViz.setLayout(vizLayout);
+});
+
+wmRotInput.addEventListener("input", () => {
+  wmLayout = { ...wmLayout, rot: Number(wmRotInput.value) };
+  wmRotVal.textContent = `${wmLayout.rot}°`;
+  previewWm.setLayout(wmLayout);
+});
+
 function ext(file: File): string {
   const dot = file.name.lastIndexOf(".");
   return dot >= 0 ? file.name.slice(dot) : "";
@@ -157,7 +182,7 @@ function readVizStyle(value: string): VizStyle {
   return (VIZ_STYLES as readonly string[]).includes(value) ? (value as VizStyle) : "none";
 }
 
-type VizData = { frames: Uint8Array[]; x: number; y: number; fps: number } | null;
+type VizData = { frames: Uint8Array[]; x: number; y: number; fps: number; rot: number } | null;
 
 const VIZ_FPS = 30;
 
@@ -177,12 +202,20 @@ async function prepareViz(image: File, audio: File): Promise<VizData> {
   const { evenW, evenH } = await evenDims(image);
   const boxW = Math.max(1, Math.round(vizLayout.w * evenW));
   const boxH = Math.max(1, Math.round(vizLayout.h * evenH));
-  const x = Math.round(vizLayout.x * evenW);
-  const y = Math.round(vizLayout.y * evenH);
+  const rot = vizLayout.rot % 360;
+  let x = Math.round(vizLayout.x * evenW);
+  let y = Math.round(vizLayout.y * evenH);
+  if (rot) {
+    // ffmpeg's rotate expands the frame to the rotated bbox; keep the box
+    // center where the preview shows it (CSS rotates around the center too)
+    const rs = rotatedSize(boxW, boxH, rot);
+    x = Math.round((vizLayout.x + vizLayout.w / 2) * evenW - rs.w / 2);
+    y = Math.round((vizLayout.y + vizLayout.h / 2) * evenH - rs.h / 2);
+  }
   const frames = await renderVizFrames(audio, style, boxW, boxH, VIZ_FPS, (done, total) => {
     statusEl.textContent = `Rendering visualizer… ${done}/${total}`;
   });
-  return { frames, x, y, fps: VIZ_FPS };
+  return { frames, x, y, fps: VIZ_FPS, rot };
 }
 
 // One transparent PNG at output resolution, same wm-draw code as the preview.
@@ -198,10 +231,20 @@ async function prepareWm(image: File, audio: File): Promise<WmInput | null> {
   canvas.width = m.boxW;
   canvas.height = m.boxH;
   drawWatermark(c, text, fontPx, m.pad, m.pad);
+  const rot = wmLayout.rot % 360;
+  let x = Math.round(wmLayout.x * evenW) - m.pad;
+  let y = Math.round(wmLayout.y * evenH) - m.pad;
+  if (rot) {
+    // keep the rotated bbox centered on the unrotated box center (see prepareViz)
+    const rs = rotatedSize(m.boxW, m.boxH, rot);
+    x = Math.round(wmLayout.x * evenW - m.pad + m.boxW / 2 - rs.w / 2);
+    y = Math.round(wmLayout.y * evenH - m.pad + m.boxH / 2 - rs.h / 2);
+  }
   return {
     png: await canvasToPng(canvas),
-    x: Math.round(wmLayout.x * evenW) - m.pad,
-    y: Math.round(wmLayout.y * evenH) - m.pad,
+    x,
+    y,
+    rot,
     durationSec: await getAudioDuration(audio),
   };
 }

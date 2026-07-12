@@ -1,4 +1,4 @@
-import { type WmLayout, DEFAULT_WM_LAYOUT } from "./encode-args";
+import { type WmLayout, DEFAULT_WM_LAYOUT, screenToLocal } from "./encode-args";
 import { drawWatermark, wmMetrics } from "./wm-draw";
 
 const HANDLE = 14; // bottom-right resize hit zone (px)
@@ -48,6 +48,8 @@ export function createPreviewWm(onLayoutChange: (layout: WmLayout) => void): {
     canvas.height = m.boxH;
     canvas.style.left = `${layout.x * hw - m.pad}px`;
     canvas.style.top = `${layout.y * hh - m.pad}px`;
+    // around the box center, like the export's rotate filter
+    canvas.style.transform = layout.rot ? `rotate(${layout.rot}deg)` : "";
 
     drawWatermark(c, text, fontPx, m.pad, m.pad);
 
@@ -84,9 +86,9 @@ export function createPreviewWm(onLayoutChange: (layout: WmLayout) => void): {
     if (!host) return;
     const rect = host.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return; // guard: avoid NaN deltas
-    const dx = (e.clientX - startX) / rect.width;
-    const dy = (e.clientY - startY) / rect.height;
     if (mode === "move") {
+      const dx = (e.clientX - startX) / rect.width;
+      const dy = (e.clientY - startY) / rect.height;
       // ponytail: loose clamp — long text may hang past the right edge; both
       // preview (overflow:hidden) and export (overlay crop) cut it the same way.
       layout = {
@@ -95,7 +97,10 @@ export function createPreviewWm(onLayoutChange: (layout: WmLayout) => void): {
         y: clamp(startLayout.y + dy, 0, 0.96),
       };
     } else {
-      layout = { ...startLayout, size: clamp(startLayout.size + dy, 0.015, 0.3) };
+      // font grows along the box's local down-axis; rotate the pointer delta
+      // into local space so the handle still resizes when the text is rotated
+      const local = screenToLocal(e.clientX - startX, e.clientY - startY, startLayout.rot);
+      layout = { ...startLayout, size: clamp(startLayout.size + local.y / rect.height, 0.015, 0.3) };
     }
     render();
     onLayoutChange(layout);

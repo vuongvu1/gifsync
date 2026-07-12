@@ -5,7 +5,10 @@ import {
   buildAnimatedArgs,
   buildConcatList,
   buildStaticArgs,
+  centerBounds,
   computeRepeatCount,
+  rotatedSize,
+  screenToLocal,
 } from "./encode-args";
 
 describe("buildStaticArgs", () => {
@@ -43,8 +46,8 @@ describe("buildAnimatedArgs", () => {
 });
 
 describe("DEFAULT_VIZ_LAYOUT", () => {
-  it("is the bottom full-width quarter strip", () => {
-    expect(DEFAULT_VIZ_LAYOUT).toEqual({ x: 0, y: 0.75, w: 1, h: 0.25 });
+  it("is the bottom full-width quarter strip, unrotated", () => {
+    expect(DEFAULT_VIZ_LAYOUT).toEqual({ x: 0, y: 0.75, w: 1, h: 0.25, rot: 0 });
   });
 });
 
@@ -114,8 +117,118 @@ describe("buildAnimatedArgs with a visualizer", () => {
 });
 
 describe("DEFAULT_WM_LAYOUT", () => {
-  it("anchors bottom-left at ~4.5% of image height", () => {
-    expect(DEFAULT_WM_LAYOUT).toEqual({ x: 0.03, y: 0.92, size: 0.045 });
+  it("anchors bottom-left at ~4.5% of image height, unrotated", () => {
+    expect(DEFAULT_WM_LAYOUT).toEqual({ x: 0.03, y: 0.92, size: 0.045, rot: 0 });
+  });
+});
+
+describe("rotatedSize", () => {
+  it("returns the input size at 0°", () => {
+    expect(rotatedSize(200, 100, 0)).toEqual({ w: 200, h: 100 });
+  });
+  it("swaps width and height at 90°", () => {
+    const { w, h } = rotatedSize(200, 100, 90);
+    expect(w).toBeCloseTo(100);
+    expect(h).toBeCloseTo(200);
+  });
+  it("expands to the bounding box of the rotated rect at 45°", () => {
+    const { w, h } = rotatedSize(200, 100, 45);
+    expect(w).toBeCloseTo((200 + 100) / Math.SQRT2);
+    expect(h).toBeCloseTo((200 + 100) / Math.SQRT2);
+  });
+});
+
+describe("screenToLocal", () => {
+  it("is the identity at 0°", () => {
+    expect(screenToLocal(10, -4, 0)).toEqual({ x: 10, y: -4 });
+  });
+  it("maps screen-down to local-width for a box rotated 90° clockwise", () => {
+    const { x, y } = screenToLocal(0, 10, 90);
+    expect(x).toBeCloseTo(10);
+    expect(y).toBeCloseTo(0);
+  });
+  it("maps screen-right to local-minus-height at 90°", () => {
+    const { x, y } = screenToLocal(10, 0, 90);
+    expect(x).toBeCloseTo(0);
+    expect(y).toBeCloseTo(-10);
+  });
+  it("maps a drag along the rotated diagonal to pure width growth at 45°", () => {
+    const { x, y } = screenToLocal(10, 10, 45);
+    expect(x).toBeCloseTo(Math.hypot(10, 10));
+    expect(y).toBeCloseTo(0);
+  });
+  it("inverts the drag direction at 180°", () => {
+    const { x, y } = screenToLocal(10, 6, 180);
+    expect(x).toBeCloseTo(-10);
+    expect(y).toBeCloseTo(-6);
+  });
+});
+
+describe("centerBounds", () => {
+  // host 640×360; viz default strip is 640×90 px
+  it("matches the unrotated clamp at 0°", () => {
+    const b = centerBounds(320, 90, 0, 640, 360);
+    expect(b.minX).toBeCloseTo(0.25); // half of the 320px box
+    expect(b.maxX).toBeCloseTo(0.75);
+    expect(b.minY).toBeCloseTo(0.125);
+    expect(b.maxY).toBeCloseTo(0.875);
+  });
+  it("swaps the travel range at 90° — a full-width strip can slide sideways", () => {
+    const b = centerBounds(640, 90, 90, 640, 360);
+    // visually 90px wide now → nearly the full horizontal range
+    expect(b.minX).toBeCloseTo(45 / 640);
+    expect(b.maxX).toBeCloseTo(1 - 45 / 640);
+    // but 640px tall > 360px frame → vertically pinned to the center
+    expect(b.minY).toBe(0.5);
+    expect(b.maxY).toBe(0.5);
+  });
+  it("pins a full-width strip horizontally at 0° (nothing to slide)", () => {
+    const b = centerBounds(640, 90, 0, 640, 360);
+    expect(b.minX).toBe(0.5);
+    expect(b.maxX).toBe(0.5);
+  });
+});
+
+describe("rotation in the filtergraph", () => {
+  it("rotates the viz stream before overlaying (alpha-preserving)", () => {
+    const args = buildStaticArgs("image.png", "audio.mp3", "out.mp4", {
+      x: 10, y: 200, fps: 30, durationSec: 3, rot: 90,
+    });
+    expect(args).toContain(
+      "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2[bg];" +
+        "[1:v]rotate=1.570796:ow=rotw(1.570796):oh=roth(1.570796):c=none[vr];" +
+        "[bg][vr]overlay=x=10:y=200:shortest=1[vout]",
+    );
+  });
+  it("rotates the watermark stream before overlaying", () => {
+    const args = buildStaticArgs("image.png", "audio.mp3", "out.mp4", undefined, {
+      x: 20, y: 400, durationSec: 42, rot: -30,
+    });
+    expect(args).toContain(
+      "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2[bg];" +
+        "[1:v]rotate=-0.523599:ow=rotw(-0.523599):oh=roth(-0.523599):c=none[wr];" +
+        "[bg][wr]overlay=x=20:y=400[vout]",
+    );
+  });
+  it("rotates both independently in the chained graph", () => {
+    const args = buildAnimatedArgs(
+      "audio.mp3", "out.mp4",
+      { x: 0, y: 5, fps: 30, durationSec: 12, rot: 45 },
+      { x: 8, y: 16, durationSec: 42, rot: 15 },
+    );
+    expect(args).toContain(
+      "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2[bg];" +
+        "[1:v]rotate=0.785398:ow=rotw(0.785398):oh=roth(0.785398):c=none[vr];" +
+        "[bg][vr]overlay=x=0:y=5:shortest=1[v1];" +
+        "[2:v]rotate=0.261799:ow=rotw(0.261799):oh=roth(0.261799):c=none[wr];" +
+        "[v1][wr]overlay=x=8:y=16[vout]",
+    );
+  });
+  it("emits no rotate node at 0°", () => {
+    const args = buildStaticArgs("image.png", "audio.mp3", "out.mp4", {
+      x: 10, y: 200, fps: 30, durationSec: 3, rot: 0,
+    });
+    expect(args.join(" ")).not.toContain("rotate");
   });
 });
 
