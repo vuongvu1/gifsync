@@ -24,6 +24,8 @@ import {
 } from "./encode-args";
 import { canvasToPng, renderVizFrames } from "./viz-frames";
 import { drawWatermark, wmMetrics } from "./wm-draw";
+import { type Pool, fetchAsFile, loadPool, pick } from "./shuffle";
+import { formatTrack } from "./track-label";
 
 // Radix dark color scales live under `.dark`; mirror the OS preference onto <html>.
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
@@ -46,9 +48,11 @@ app.innerHTML = `
     </label>
     <label class="drop" id="audioDrop">
       Music
+      <span class="name" id="audioName"></span>
       <input id="audioInput" type="file" accept="audio/*" hidden />
     </label>
   </div>
+  <button id="shuffle" class="ghost" hidden>🎲 Surprise me</button>
   <div id="preview"><div id="imageHost"></div><audio id="audio" controls></audio></div>
   <div class="controls">
     <label class="field">
@@ -106,6 +110,8 @@ const generateBtn = app.querySelector<HTMLButtonElement>("#generate")!;
 const progressEl = app.querySelector<HTMLProgressElement>("#progress")!;
 const statusEl = app.querySelector<HTMLDivElement>("#status")!;
 const downloadEl = app.querySelector<HTMLDivElement>("#download")!;
+const shuffleBtn = app.querySelector<HTMLButtonElement>("#shuffle")!;
+const audioNameEl = app.querySelector<HTMLSpanElement>("#audioName")!;
 
 const previewViz = createPreviewViz(audioEl, (l) => {
   vizLayout = l;
@@ -171,6 +177,7 @@ audioInput.addEventListener("change", () => {
     return;
   }
   audioFile = f;
+  audioNameEl.textContent = "";
   statusEl.textContent = "";
   statusEl.className = "";
   refresh();
@@ -371,5 +378,53 @@ generateBtn.addEventListener("click", async () => {
   } finally {
     progressEl.hidden = true;
     generateBtn.disabled = !(imageFile && audioFile);
+  }
+});
+
+// Dev-only affordance: /pool exists solely under `vite dev`. In the built site
+// the request fails, the button stays hidden, and the file pickers are the
+// only way in. import.meta.env.DEV is inlined to `false` in production, so
+// Rollup drops this whole block (and the otherwise-wasted /pool request)
+// from the bundle.
+let pool: Pool | null = null;
+if (import.meta.env.DEV) {
+  loadPool().then(
+    (p) => {
+      pool = p;
+      shuffleBtn.hidden = false;
+    },
+    (err) => {
+      // console.debug (not warn): a rejection here is also the normal
+      // production state, so keep it out of the default console and never
+      // surface it to the user via statusEl — just leave a breadcrumb for dev.
+      console.debug("[gifsync-pool] loadPool() rejected:", err);
+    },
+  );
+}
+
+shuffleBtn.addEventListener("click", async () => {
+  if (!pool) return;
+  shuffleBtn.disabled = true;
+  try {
+    const track = pick(pool.tracks);
+    const [image, audio] = await Promise.all([
+      fetchAsFile(pick(pool.gifs)),
+      fetchAsFile(track.path),
+    ]);
+    imageFile = image;
+    audioFile = audio;
+    // Clear the pickers so their stale filenames can't imply a different source.
+    imageInput.value = "";
+    audioInput.value = "";
+    audioNameEl.textContent = formatTrack(track);
+    statusEl.textContent = "";
+    statusEl.className = "";
+    refresh();
+    await updateResLabel();
+  } catch (err) {
+    statusEl.className = "error";
+    statusEl.textContent = err instanceof Error ? err.message : String(err);
+  } finally {
+    shuffleBtn.disabled = false;
   }
 });
