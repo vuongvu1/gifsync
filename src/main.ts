@@ -1,9 +1,4 @@
-import "@radix-ui/colors/slate.css";
-import "@radix-ui/colors/slate-dark.css";
-import "@radix-ui/colors/indigo.css";
-import "@radix-ui/colors/indigo-dark.css";
-import "@radix-ui/colors/red.css";
-import "@radix-ui/colors/red-dark.css";
+import "./theme";
 
 import { decodeAnimated } from "./decode";
 import type { EncodeInput, WmInput } from "./encode";
@@ -25,14 +20,9 @@ import {
 import { canvasToPng, renderVizFrames } from "./viz-frames";
 import { drawWatermark, wmMetrics } from "./wm-draw";
 
-// Radix dark color scales live under `.dark`; mirror the OS preference onto <html>.
-const darkQuery = matchMedia("(prefers-color-scheme: dark)");
-const applyTheme = () => document.documentElement.classList.toggle("dark", darkQuery.matches);
-applyTheme();
-darkQuery.addEventListener("change", applyTheme);
-
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
+  <a class="back" href="/">← all tools</a>
   <h1>gifsync</h1>
   <p class="note">
     Combine an image (photo, GIF, or animated WebP) with music into an MP4.

@@ -4,10 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="/src/style.css" />
-    <title>gifsync — image + music → video</title>
+    <title>tools — small browser utilities</title>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="app">
+      <h1>tools</h1>
+      <p class="note">
+        Small single-purpose utilities that run entirely in your browser.
+        Nothing is uploaded.
+      </p>
+      <ul class="tools">
+        <li>
+          <a class="tool" href="/gifsync/">
+            <span class="tool-name">gifsync</span>
+            <span class="tool-desc">
+              Combine an image (photo, GIF, or animated WebP) with music into an
+              MP4 — with an audio visualizer and a watermark.
+            </span>
+          </a>
+        </li>
+        <li>
+          <a class="tool" href="/ytstamp/">
+            <span class="tool-name">live timestamp</span>
+            <span class="tool-desc">
+              Mark a moment in a YouTube live stream. Paste the player's debug
+              info, get a shareable link pointing at that exact spot.
+            </span>
+          </a>
+        </li>
+      </ul>
+    </div>
+    <script type="module" src="/src/home.ts"></script>
   </body>
 </html>
