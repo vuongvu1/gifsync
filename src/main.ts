@@ -208,6 +208,15 @@ function ext(file: File): string {
   return dot >= 0 ? file.name.slice(dot) : "";
 }
 
+// Name the video after the track. Shuffled files already arrive named
+// "Title — Artist.mp3" (fetchAsFile uses the basename), so swapping the
+// extension covers the shuffle and manual-pick paths with one rule. Names
+// come off the filesystem, so they need no sanitising.
+function outputName(): string {
+  if (!audioFile) return "gifsync.mp4";
+  return `${audioFile.name.replace(/\.[^.]+$/, "")}.mp4`;
+}
+
 // Fail safe: if the <select> and VizStyle ever drift, fall back to "none"
 // rather than feeding an unknown style into a malformed ffmpeg filtergraph.
 const VIZ_STYLES: readonly VizStyle[] = ["none", "bars", "waveform"];
@@ -329,7 +338,7 @@ generateBtn.addEventListener("click", async () => {
   if (picker) {
     try {
       fileHandle = await picker({
-        suggestedName: "gifsync.mp4",
+        suggestedName: outputName(),
         types: [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }],
       });
     } catch (err) {
@@ -359,7 +368,7 @@ generateBtn.addEventListener("click", async () => {
     const url = lastDownloadUrl;
     const link = document.createElement("a");
     link.href = url;
-    link.download = "gifsync.mp4";
+    link.download = outputName();
     link.textContent = "Download MP4";
     downloadEl.append(link);
 
