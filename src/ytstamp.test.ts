@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatOffset, parseDebugInfo, timestampUrl } from "./ytstamp";
+import { asWatchUrl, formatOffset, parseDebugInfo, timestampUrl } from "./ytstamp";
 
 // Trimmed to the fields the parser reads, plus noise it must ignore.
 const SAMPLE = JSON.stringify({
@@ -56,14 +56,28 @@ describe("parseDebugInfo", () => {
   });
 });
 
+describe("asWatchUrl", () => {
+  it("passes a pasted watch link through untouched, query string and all", () => {
+    const url = "https://youtu.be/2loYnaV0Cx0?list=PLAB5UabKPmPLLfbvXHv4Kf-J0fa3aTHd9&t=2988";
+    expect(asWatchUrl(`  ${url}\n`)).toBe(url);
+  });
+
+  it("ignores a debug blob, even one with a URL inside it", () => {
+    expect(asWatchUrl('{ "docid": "abc", "url": "https://youtu.be/abc" }')).toBeNull();
+  });
+
+  it("rejects non-http schemes so the value is safe as an href", () => {
+    expect(asWatchUrl("javascript:alert(1)")).toBeNull();
+  });
+});
+
 describe("timestampUrl", () => {
   it("truncates to whole seconds — YouTube's t= parameter has no sub-second precision", () => {
     expect(timestampUrl("Gf05bSlqS1M", 4441.456)).toBe("https://www.youtube.com/watch?v=Gf05bSlqS1M&t=4441s");
   });
 
-  it("shifts the start back by the offset, clamped at zero", () => {
-    expect(timestampUrl("abc", 100, 10)).toBe("https://www.youtube.com/watch?v=abc&t=90s");
-    expect(timestampUrl("abc", 5, 30)).toBe("https://www.youtube.com/watch?v=abc&t=0s");
+  it("clamps a negative playhead at zero", () => {
+    expect(timestampUrl("abc", -5)).toBe("https://www.youtube.com/watch?v=abc&t=0s");
   });
 });
 

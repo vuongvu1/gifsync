@@ -23,7 +23,21 @@ seconds before the copy, by the live latency in `lat`). The resulting
 `watch?v=…&t=…s` link resolves once the DVR window or the archive is available.
 
 The parser falls back to a per-key scan when the pasted text isn't valid JSON,
-which a truncated or dirty copy often isn't.
+which a truncated or dirty copy often isn't. A plain `https://…` watch link
+pasted into the same box is kept verbatim — a `?t=` URL already carries its
+offset, so there is nothing to derive.
+
+**Add to Todoist** posts `title - [url]` to a fixed project. Set the project id
+in `TODOIST_PROJECT_ID` at the top of `src/ytstamp-main.ts`, and put your API
+token (Todoist → Settings → Integrations → Developer) in a gitignored `.env`:
+
+```
+VITE_TODOIST_TOKEN=your_token_here
+```
+
+Vite inlines `VITE_`-prefixed vars at build time, so the token is readable by
+anyone who can load the built page. Keep the deployment private and rotate the
+token if it leaks.
 
 ## Browser support
 

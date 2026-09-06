@@ -46,9 +46,17 @@ export function parseDebugInfo(text: string): StampInfo {
   return { videoId, seconds, live: str(blob["live"]) !== null, markedAt };
 }
 
-/** `rewindSec` backs the link up, for when the moment is noticed a beat late. */
-export function timestampUrl(videoId: string, seconds: number, rewindSec = 0): string {
-  const at = Math.max(0, Math.floor(seconds - rewindSec));
+// A pasted watch link is already the answer — a `?t=` URL carries its own
+// offset, so there is nothing to derive. Anchored at the start so it never
+// matches a URL sitting inside a debug blob, and http(s)-only so the value is
+// safe to use as an href.
+export function asWatchUrl(text: string): string | null {
+  const trimmed = text.trim();
+  return /^https?:\/\/\S+$/i.test(trimmed) ? trimmed : null;
+}
+
+export function timestampUrl(videoId: string, seconds: number): string {
+  const at = Math.max(0, Math.floor(seconds));
   return `https://www.youtube.com/watch?v=${videoId}&t=${at}s`;
 }
 

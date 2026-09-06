@@ -5,3 +5,7 @@ dist
 .playwright-mcp
 .wrangler
 gifsync-light.png
+
+# Todoist token for the live timestamp tool (baked into the bundle at build time)
+.env
+.env.*
