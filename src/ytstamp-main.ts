@@ -131,7 +131,7 @@ todoistBtn.addEventListener("click", async () => {
   todoistBtn.disabled = true;
   todoistBtn.textContent = "Adding…";
   try {
-    await addTask(`${title} - [${linkEl.href}]`);
+    await addTask(`${title} - ${linkEl.href}`);
     setStatus("Added to Todoist.");
     titleInput.value = "";
   } catch (err) {
